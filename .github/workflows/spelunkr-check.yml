@@ -1,0 +1,49 @@
+# spelunkr-check.yml: once a day, check that spelunkr.tv still works the way this plugin expects (data shape,
+# engine version, engine code, and what is actually playing). On failure, open or update an issue labelled
+# broken-by-spelunkr with the details. Run it by hand with simulate_break to prove the issue path works.
+name: Spelunkr check
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+    inputs:
+      simulate_break:
+        description: Force a failure to test the issue path
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Install the headless browser
+        working-directory: tools/check
+        run: |
+          bun install --frozen-lockfile
+          bunx playwright install --with-deps chromium
+
+      - name: Check
+        env:
+          SIMULATE: ${{ inputs.simulate_break && '--simulate-break' || '' }}
+        run: bun tools/check/check.ts --report report.md $SIMULATE
+
+      - name: Open or update the broken-by-spelunkr issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f report.md ] || echo "The check crashed before writing a report." > report.md
+          printf '\n\nRun: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> report.md
+          open=$(gh issue list --label broken-by-spelunkr --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body-file report.md
+          else
+            gh issue create --title "Spelunkr check failed" --label broken-by-spelunkr --body-file report.md
+          fi
