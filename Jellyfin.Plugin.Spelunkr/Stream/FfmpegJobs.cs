@@ -58,7 +58,7 @@ public static class FfmpegJobs
                 if (music is not null)
                 {
                     jobs.Add(new(
-                        [.. Head, .. Color(look), "-ss", Seconds((music.StartOffsetS * 1000) + offsetMs), "-i", music.Url,
+                        [.. Head, .. Color(look), .. Remote, "-ss", Seconds((music.StartOffsetS * 1000) + offsetMs), "-i", music.Url,
                          "-filter_complex", $"{filter}[v];[1:a]{Audio},apad[a]", "-map", "[v]", "-map", "[a]", .. tail],
                         files));
                 }
@@ -77,14 +77,19 @@ public static class FfmpegJobs
 
     private static readonly Dictionary<string, string> Empty = [];
 
-    private static string[] Head => ["-hide_banner", "-loglevel", "error", "-nostdin"];
+    // -progress: ffmpeg reports how much it has written (out_time_us) on stderr, so a job that dies part-way can be
+    // finished from exactly where it stopped.
+    private static string[] Head => ["-hide_banner", "-loglevel", "error", "-nostdin", "-nostats", "-progress", "pipe:2", "-stats_period", "0.25"];
 
     // Read inputs at playback speed after a 10 s head start: the head start covers the gap while the next job
     // starts up, and real-time reading stops a 90-minute film being fetched and encoded all at once.
     private static string[] Paced => ["-readrate", "1", "-readrate_initial_burst", "10"];
 
-    private static IEnumerable<string> Net() =>
-        [.. Paced, "-reconnect", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5"];
+    private static IEnumerable<string> Net() => [.. Paced, .. Remote];
+
+    // For every input fetched over the network. -rw_timeout (microseconds) makes ffmpeg give up on a server that
+    // stops sending, instead of waiting forever; reconnect covers dropped connections.
+    private static string[] Remote => ["-rw_timeout", "15000000", "-reconnect", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5"];
 
     private static string[] Color(ChannelLook look) =>
         [.. Paced, "-f", "lavfi", "-i", $"color=c=0x{look.Color.TrimStart('#')}:s=1280x720:r=30"];

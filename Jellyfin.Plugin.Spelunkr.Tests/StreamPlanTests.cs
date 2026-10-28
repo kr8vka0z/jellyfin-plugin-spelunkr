@@ -12,7 +12,7 @@ public class StreamPlanTests
     private static readonly ChannelLook Gumshoe = new("GUMSHOE", "#E8DFC8");
 
     // An "open" bump straight from the oracle (Fixtures/timeline-1793217600000.jsonl, index 173).
-    private static Segment OpenBump() => ScheduleEngineTests.GumshoeEngine()
+    internal static Segment OpenBump() => ScheduleEngineTests.GumshoeEngine()
         .SegmentsBetween("gumshoe", 1_793_220_818_819, 1_793_220_818_820, "https://audio.spelunkr.tv/bumps/")[0];
 
     private static string Arg(IReadOnlyList<string> args, string flag) => args[args.ToList().IndexOf(flag) + 1];

@@ -3,7 +3,6 @@
 // (through GetStream), the same way Jellyfin's own tuners hand a live stream to its player.
 // The file lives in the plugin's own cache folder, not Jellyfin's transcode folder: Jellyfin empties the transcode
 // folder when its transcoding service first starts, which deleted a stream opened just after a restart.
-using System.Diagnostics;
 using System.Globalization;
 using Jellyfin.Plugin.Spelunkr.Schedule;
 using MediaBrowser.Controller;
@@ -17,8 +16,8 @@ namespace Jellyfin.Plugin.Spelunkr.Stream;
 /// <summary>A live Spelunkr channel rendered by ffmpeg.</summary>
 internal sealed class ChannelStream : ILiveStream
 {
-    // Shorter than this left of a segment (we joined at its very end) is skipped, not started.
-    private const long MinJobMs = 500;
+    // A job whose output stops for this long is killed and replaced by the next fallback.
+    private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(45);
 
     private readonly string _channelId;
     private readonly ChannelLook _look;
@@ -121,32 +120,31 @@ internal sealed class ChannelStream : ILiveStream
 
                     var segment = await _source.SegmentAtAsync(_channelId, contentMs, ct).ConfigureAwait(false);
                     var durationMs = segment.EndMs - contentMs;
-                    if (durationMs < MinJobMs)
+                    if (durationMs < SegmentPlayer.MinJobMs)
                     {
+                        // Joined at the very end of a segment: not worth starting ffmpeg for.
                         contentMs = segment.EndMs;
                         continue;
                     }
 
-                    var wrote = false;
-                    string? lastError = null;
-                    foreach (var job in FfmpegJobs.For(segment, _look, contentMs - segment.StartMs, durationMs, outputS))
+                    var emittedMs = await SegmentPlayer.PlayAsync(
+                        segment,
+                        _look,
+                        contentMs - segment.StartMs,
+                        durationMs,
+                        outputS,
+                        (job, c) => FfmpegProcess.RunAsync(_ffmpegPath, job, _workDir, output, () => started.TrySetResult(), StallTimeout, _logger, c),
+                        _logger,
+                        ct).ConfigureAwait(false);
+                    if (emittedMs == 0 && !started.Task.IsCompleted)
                     {
-                        (wrote, lastError) = await RunAsync(job, output, started, ct).ConfigureAwait(false);
-                        if (wrote)
-                        {
-                            break;
-                        }
-
-                        _logger.LogWarning("Spelunkr {Channel}: ffmpeg gave no output for {Kind} {Id}, trying the next fallback: {Error}", _channelId, segment.Kind, segment.Id, lastError);
+                        throw new IOException($"ffmpeg produced nothing for {segment.Kind} {segment.Id} or any fallback");
                     }
 
-                    if (!wrote && !started.Task.IsCompleted)
-                    {
-                        throw new IOException($"ffmpeg produced no output for {segment.Kind} {segment.Id}: {lastError}");
-                    }
-
+                    // The schedule moves on by the whole segment; the stream's clock only by what was written, so a
+                    // segment that failed completely is skipped with no gap in the timestamps.
                     contentMs += durationMs;
-                    outputS += durationMs / 1000.0;
+                    outputS += emittedMs / 1000.0;
                 }
             }
         }
@@ -163,62 +161,6 @@ internal sealed class ChannelStream : ILiveStream
         {
             EnableStreamSharing = false;
         }
-    }
-
-    /// <summary>Runs one ffmpeg job, appending its output. Returns whether it wrote anything, and its error text.</summary>
-    private async Task<(bool Wrote, string? Error)> RunAsync(FfmpegJob job, FileStream output, TaskCompletionSource started, CancellationToken ct)
-    {
-        foreach (var (name, text) in job.TextFiles)
-        {
-            await File.WriteAllTextAsync(Path.Combine(_workDir, name), text, ct).ConfigureAwait(false);
-        }
-
-        var psi = new ProcessStartInfo(_ffmpegPath)
-        {
-            WorkingDirectory = _workDir,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        foreach (var arg in job.Args)
-        {
-            psi.ArgumentList.Add(arg);
-        }
-
-        using var process = Process.Start(psi) ?? throw new IOException("could not start ffmpeg at " + _ffmpegPath);
-        var stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
-        var total = 0L;
-        try
-        {
-            var buffer = new byte[81920];
-            var stdout = process.StandardOutput.BaseStream;
-            int n;
-            while ((n = await stdout.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-            {
-                await output.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
-                // Flush every chunk: Jellyfin reads the file while it grows.
-                await output.FlushAsync(ct).ConfigureAwait(false);
-                total += n;
-                started.TrySetResult();
-            }
-
-            await process.WaitForExitAsync(ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-
-        var error = (await stderr.ConfigureAwait(false)).Trim();
-        if (total > 0 && process.ExitCode != 0)
-        {
-            _logger.LogWarning("Spelunkr {Channel}: ffmpeg ended early (exit {Code}): {Error}", _channelId, process.ExitCode, error);
-        }
-
-        return (total > 0, error.Length > 0 ? error : null);
     }
 
     private void TryDelete(Action delete)
