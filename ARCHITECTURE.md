@@ -16,10 +16,15 @@ continuous TV stream.
   interpreter for .NET, with JSON passed in and out.
 - **SpelunkrSource** (`SpelunkrSource.cs`): downloads `lineup.json`, each channel's manifests and the network-wide
   platform file from Spelunkr's public storage, refreshes the lineup hourly, and registers every listed version
-  with the engine. Holds the list of offered channels (only `gumshoe` for now).
+  with the engine, plus each version's details file (film descriptions). Offers every lineup channel with a
+  number that isn't coming-soon, debug-only or audio-overlay (`IsOffered`); a channel whose files fail to load is
+  left out without affecting the others.
 - **Tuner** (`SpelunkrTunerHost.cs`): Jellyfin's Live TV asks it for channels and streams.
 - **Guide** (`Guide/`): a Live TV guide source that computes programmes from the schedule. One entry per film,
   from its start to the next film's start.
+- **Channel logos** (`Guide/ChannelLogo.cs`): draws each channel's pixel-art logomark as a PNG with the site's
+  palette rules (ported, pinned by a test to colors from the site's own code). Written once into
+  `<cache>/spelunkr-logos` and handed to Jellyfin as the channel's image file.
 - **Registration** (`Registration.cs`): on startup adds a Spelunkr tuner entry and guide entry to Live TV settings.
 - **Stream** (`Stream/`): `ChannelStream` runs one ffmpeg per schedule segment and appends the output to a file
   Jellyfin serves to its players. `FfmpegJobs` builds the commands, `StreamPump` walks the schedule, `SegmentPlayer` walks the fallbacks,
@@ -58,6 +63,14 @@ continuous TV stream.
   the clock and skips forward if it falls more than 15 s behind.
 
 ## Gotchas
+
+- Audio-overlay channels (VACATION SLIDES) are left out: the site plays silent films under a playlist of
+  archive.org recordings that the engine picks per film and the site resolves through archive.org's metadata
+  API. Adding them means building that music track in ffmpeg.
+- "Up next" cards (channels with `block`) are drawn as one still card over their sting; the site animates the
+  words onto the music's beats.
+- With all channels the first guide refresh takes a few minutes (the schedule runs in a JavaScript interpreter
+  for 7 days x 30 channels).
 
 - Without the platform file named in a manifest, the engine silently drops all bumps and ads and the timing is
   wrong. `schedule.js` refuses to load a manifest without it.
