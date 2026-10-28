@@ -22,12 +22,13 @@ const slides = (b) => b.slides.map((s) => ({ text: s.text, ms: slideMs(s.text) }
 const audio = (a, base) => a && { file: a.filename, url: base + encodeURIComponent(a.filename), startOffsetS: a.startOffset };
 
 /** One engine lookup result as a plain segment: what plays from startMs for lengthMs. */
-function describe(q, audioBase) {
+function describe(channel, q, audioBase) {
   const it = q.item;
   const base = { startMs: q.startMs, lengthMs: q.endMs - q.startMs, version: q.version, cycle: q.cycle, index: q.index };
   switch (it.type) {
     case "video":
-      return { ...base, kind: "show", id: it.id, url: archiveUrl(it.id, it.mp4 ?? it.file), inMs: (it.inS ?? 0) * 1000, title: it.title, year: it.year };
+      // videoIndex: the film's position in the manifest, which is also its position in the details file.
+      return { ...base, kind: "show", id: it.id, url: archiveUrl(it.id, it.mp4 ?? it.file), inMs: (it.inS ?? 0) * 1000, title: it.title, year: it.year, videoIndex: it.videoIndex };
     case "ad":
       return { ...base, kind: "ad", id: it.slice.id, url: archiveUrl(it.slice.tape, it.slice.file), inMs: it.slice.inMs, title: `${it.slice.tape} (${it.slice.year})`, gainDb: it.slice.gainDb ?? 0 };
     case "bump-break": {
@@ -39,6 +40,12 @@ function describe(q, audioBase) {
       out.layout = { leadInMs: LEAD_IN_MS, tailMs: TAIL_A_MS + TAIL_B_MS, gapMs: GAP_MS };
       return out;
     }
+    case "up-next": {
+      // A card between films in a "block" naming the next film, over a slice of music (the sting) if there is one.
+      const out = { ...base, kind: "up-next", id: it.key, next: lookup(channel, q.endMs).item.title ?? null };
+      if (it.sting) out.sting = { file: it.sting.track, url: audioBase + encodeURIComponent(it.sting.track), startOffsetS: it.sting.startMs / 1000 };
+      return out;
+    }
     default:
       return { ...base, kind: it.type, id: it.key };
   }
@@ -47,7 +54,7 @@ function describe(q, audioBase) {
 /** The segment playing at atMs, plus how far into it atMs is. */
 export function segmentAt(channel, atMs, audioBase) {
   const q = lookup(channel, atMs);
-  return JSON.stringify({ atMs, offsetMs: atMs - q.startMs, ...describe(q, audioBase) });
+  return JSON.stringify({ atMs, offsetMs: atMs - q.startMs, ...describe(channel, q, audioBase) });
 }
 
 /** Every segment from the one playing at fromMs up to (not including) the first that starts at or after toMs. */
@@ -55,7 +62,7 @@ export function segmentsBetween(channel, fromMs, toMs, audioBase) {
   const out = [];
   for (const q of walk(channel, fromMs)) {
     if (q.startMs >= toMs) break;
-    out.push(describe(q, audioBase));
+    out.push(describe(channel, q, audioBase));
   }
   return JSON.stringify(out);
 }

@@ -15,7 +15,8 @@ public class StreamPlanTests
     internal static Segment OpenBump() => ScheduleEngineTests.GumshoeEngine()
         .SegmentsBetween("gumshoe", 1_793_220_818_819, 1_793_220_818_820, "https://audio.spelunkr.tv/bumps/")[0];
 
-    private static string Arg(IReadOnlyList<string> args, string flag) => args[args.ToList().IndexOf(flag) + 1];
+    private static string Arg(IReadOnlyList<string> args, string flag, int occurrence = 0) =>
+        args[args.Select((a, i) => (a, i)).Where(x => x.a == flag).ElementAt(occurrence).i + 1];
 
     [Fact]
     public void Open_bump_shows_the_channel_name_during_the_lead_in_then_each_slide_in_turn()
@@ -52,6 +53,21 @@ public class StreamPlanTests
 
         Assert.Equal(new BumpCard(3_500, 6_000, "gumshoe."), cards[1]);
         Assert.Equal(new BumpCard(8_300, 11_300, "spelunkr.tv"), cards[2]);
+    }
+
+    [Fact]
+    public void Up_next_card_names_the_next_film_over_its_sting()
+    {
+        // From the oracle (Fixtures/timeline-homeroom-1793217600000.jsonl): a 10 s card before "Friendship Begins At Home".
+        var card = ScheduleEngineTests.Engine("homeroom")
+            .SegmentsBetween("homeroom", 1_793_217_695_269, 1_793_217_695_270, "https://audio.spelunkr.tv/bumps/")[0];
+        Assert.Equal("up-next", card.Kind);
+
+        var job = FfmpegJobs.For(card, new ChannelLook("HOMEROOM", "#336699"), 0, card.LengthMs, 0)[0];
+
+        Assert.Equal("UP NEXT ON HOMEROOM\n\nFriendship Begins At Home", job.TextFiles["t0.txt"]);
+        Assert.Equal("https://audio.spelunkr.tv/bumps/purrplecat-crossroads.mp3", Arg(job.Args, "-i", 1));
+        Assert.Equal("14.350", Arg(job.Args, "-ss")); // the sting's slice of the track
     }
 
     [Fact]
