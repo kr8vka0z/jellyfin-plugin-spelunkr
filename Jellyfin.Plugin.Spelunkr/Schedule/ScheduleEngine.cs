@@ -35,13 +35,20 @@ public sealed class ScheduleEngine
     {
         lock (_lock)
         {
-            if (!_channels.TryGetValue(channelId, out var channel))
-            {
-                channel = _js.Invoke(_fn.CreateChannel, channelId);
-                _channels[channelId] = channel;
-            }
+            var channel = _channels.TryGetValue(channelId, out var existing) ? existing : _js.Invoke(_fn.CreateChannel, channelId);
+            var added = _js.Invoke(_fn.AddVersion, channel, manifestJson, platformJson is null ? JsValue.Null : platformJson, pointerJson).AsBoolean();
+            // Only keep a channel once a version loaded, so HasChannel never reports an empty schedule.
+            _channels[channelId] = channel;
+            return added;
+        }
+    }
 
-            return _js.Invoke(_fn.AddVersion, channel, manifestJson, platformJson is null ? JsValue.Null : platformJson, pointerJson).AsBoolean();
+    /// <summary>Whether at least one version of the channel's schedule is loaded.</summary>
+    public bool HasChannel(string channelId)
+    {
+        lock (_lock)
+        {
+            return _channels.ContainsKey(channelId);
         }
     }
 
