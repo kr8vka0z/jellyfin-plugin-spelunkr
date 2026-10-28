@@ -46,7 +46,9 @@ jobs:
             manifest.json > pkg/meta.json
           # Python's zipfile, not `zip`: on the runner `zip` exited 0 without writing the file (v0.1.0 run).
           python3 -m zipfile -c "$ZIP" pkg/*
-          md5=$(md5sum "$ZIP" | cut -d' ' -f1)
+          # No pipe, so bash -e stops here if md5sum fails (the step runs without pipefail).
+          md5=$(md5sum "$ZIP")
+          md5="${md5%% *}"
           echo "MD5=$md5" >> "$GITHUB_ENV"
 
       - name: Publish the GitHub release
