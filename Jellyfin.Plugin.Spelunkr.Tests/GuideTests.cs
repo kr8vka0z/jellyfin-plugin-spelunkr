@@ -50,6 +50,38 @@ public class GuideTests
     }
 
     [Fact]
+    public async Task Films_carry_poster_year_and_spelunkrs_description()
+    {
+        var guide = new SpelunkrGuide(SpelunkrSourceTests.FromFixtures());
+        var at = DateTimeOffset.FromUnixTimeMilliseconds(1_793_215_002_819).UtcDateTime;
+
+        var film = (await guide.GetProgramsAsync(new(), "spelunkr_gumshoe", at, at.AddMinutes(1), CancellationToken.None)).Single();
+
+        Assert.Equal("The Long Night", film.Name);
+        Assert.Equal(1947, film.ProductionYear);
+        Assert.True(film.IsMovie); // GUMSHOE is a film channel
+        Assert.Equal("https://archive.org/services/img/the-long-night-1947-henry-fonda-barbara-bel-geddes-vincent-price-ann-dvorak-720p", film.ImageUrl);
+        // From Fixtures/spelunkr/details/gumshoe/v19.json, item 43 (The Long Night's place in the manifest).
+        Assert.Equal(
+            "Anatole Litvak remakes Marcel Carné's Le jour se lève for RKO, with Henry Fonda in Jean Gabin's old part and Vincent Price permitted a bow tie. Most of it is spent at night."
+                + "\n\nDirected by Anatole Litvak. With Henry Fonda, Barbara Bel Geddes, Vincent Price.",
+            film.Overview);
+    }
+
+    [Fact]
+    public async Task Shorts_on_non_film_channels_are_not_marked_as_movies()
+    {
+        var guide = new SpelunkrGuide(SpelunkrSourceTests.FromFixtures());
+        var at = DateTimeOffset.FromUnixTimeMilliseconds(1_793_217_600_000).UtcDateTime;
+
+        var programs = await guide.GetProgramsAsync(new(), "spelunkr_homeroom", at, at.AddHours(1), CancellationToken.None);
+
+        Assert.NotEmpty(programs);
+        Assert.All(programs, p => Assert.False(p.IsMovie));
+        Assert.All(programs, p => Assert.Null(p.Overview)); // no details file in the fixtures for homeroom: titles only
+    }
+
+    [Fact]
     public void Program_ids_are_stable_across_refreshes()
     {
         var a = GuidePrograms.Build(Day(), "spelunkr_gumshoe");

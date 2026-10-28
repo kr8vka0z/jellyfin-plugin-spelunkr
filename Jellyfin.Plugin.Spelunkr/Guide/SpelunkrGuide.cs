@@ -49,7 +49,8 @@ public sealed class SpelunkrGuide : IListingsProvider
             segments.Add(await _source.SegmentAtAsync(id, segments[^1].EndMs, cancellationToken).ConfigureAwait(false));
         }
 
-        return GuidePrograms.Build(segments, channelId).Where(p => p.EndDate > startDateUtc && p.StartDate < endDateUtc).ToList();
+        var films = (await _source.GetChannelsAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault(c => c.Id == id)?.Family == "film";
+        return GuidePrograms.Build(segments, channelId, s => _source.Details(id, s), films).Where(p => p.EndDate > startDateUtc && p.StartDate < endDateUtc).ToList();
     }
 
     /// <inheritdoc />
