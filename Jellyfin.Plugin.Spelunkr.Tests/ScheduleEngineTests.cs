@@ -1,6 +1,7 @@
 // ScheduleEngineTests: the engine run in Jint must give the same schedule as the same code run in Bun (tools/oracle).
 // Fixtures/spelunkr is a mirror of Spelunkr's public data; the expected files were made with
-//   bun tools/oracle/oracle.ts --data Jellyfin.Plugin.Spelunkr.Tests/Fixtures/spelunkr timeline <fromMs> 24
+//   bun tools/oracle/oracle.ts --data Jellyfin.Plugin.Spelunkr.Tests/Fixtures/spelunkr timeline <fromMs> 24 --channel <channel>
+//   (saved as timeline-<channel>-<fromMs>.jsonl; homeroom covers "up next" cards between films)
 //   bun tools/oracle/oracle.ts --data Jellyfin.Plugin.Spelunkr.Tests/Fixtures/spelunkr now <atMs>
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -15,16 +16,18 @@ public class ScheduleEngineTests
 
     internal static readonly string FixtureDir = Path.Combine(AppContext.BaseDirectory, "Fixtures", "spelunkr");
 
-    internal static ScheduleEngine GumshoeEngine()
+    internal static ScheduleEngine GumshoeEngine() => Engine("gumshoe");
+
+    internal static ScheduleEngine Engine(string channelId)
     {
         var engine = new ScheduleEngine();
         var lineup = JsonNode.Parse(File.ReadAllText(Path.Combine(FixtureDir, "lineup.json")))!;
-        var gumshoe = lineup["channels"]!.AsArray().First(c => (string?)c!["id"] == "gumshoe")!;
-        foreach (var pointer in gumshoe["versions"]!.AsArray())
+        var channel = lineup["channels"]!.AsArray().First(c => (string?)c!["id"] == channelId)!;
+        foreach (var pointer in channel["versions"]!.AsArray())
         {
             var manifest = File.ReadAllText(Path.Combine(FixtureDir, (string)pointer!["manifest"]!));
             var platform = File.ReadAllText(Path.Combine(FixtureDir, (string)JsonNode.Parse(manifest)!["platform"]!));
-            engine.AddVersion("gumshoe", manifest, platform, pointer.ToJsonString());
+            engine.AddVersion(channelId, manifest, platform, pointer.ToJsonString());
         }
 
         return engine;
@@ -37,10 +40,13 @@ public class ScheduleEngineTests
     [MemberData(nameof(TimelineFiles))]
     public void Timeline_matches_oracle(string file)
     {
-        var fromMs = long.Parse(file["timeline-".Length..^".jsonl".Length], System.Globalization.CultureInfo.InvariantCulture);
+        // timeline-<channel>-<fromMs>.jsonl
+        var dash = file.LastIndexOf('-');
+        var channelId = file["timeline-".Length..dash];
+        var fromMs = long.Parse(file[(dash + 1)..^".jsonl".Length], System.Globalization.CultureInfo.InvariantCulture);
         var expected = File.ReadAllLines(Path.Combine(AppContext.BaseDirectory, "Fixtures", file));
 
-        var actual = GumshoeEngine().SegmentsBetweenJson("gumshoe", fromMs, fromMs + (24 * 3_600_000L), AudioBase);
+        var actual = Engine(channelId).SegmentsBetweenJson(channelId, fromMs, fromMs + (24 * 3_600_000L), AudioBase);
 
         var actualLines = JsonNode.Parse(actual)!.AsArray().Select(n => n!.ToJsonString()).ToArray();
         Assert.Equal(expected.Length, actualLines.Length);

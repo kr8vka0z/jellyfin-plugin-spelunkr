@@ -5,7 +5,9 @@ ads and shows from the Internet Archive, the same programme for everyone at the 
 those channels to Jellyfin's **Live TV**, with a TV guide, so you can tune in from any Jellyfin app and see
 what everyone on spelunkr.tv is watching right now.
 
-Right now it carries one channel: **GUMSHOE** (channel 101, crime pictures all night). More channels will follow.
+It carries every channel spelunkr.tv lists, each with its pixel-art logo and its channel number from the site
+(GUMSHOE is 101, HAPPY TREES is 12, and so on). New channels appear on their own. The one exception for now is
+VACATION SLIDES: its silent home movies are scored with music the plugin can't add yet.
 
 ## Install
 
@@ -14,7 +16,7 @@ Right now it carries one channel: **GUMSHOE** (channel 101, crime pictures all n
    - URL: `https://raw.githubusercontent.com/kr8vka0z/jellyfin-plugin-spelunkr/main/manifest.json`
 2. Open the **Catalog**, find **Spelunkr** under Live TV, and install it.
 3. Restart Jellyfin.
-4. Open **Live TV**. GUMSHOE is there with its guide. If the guide is empty, give it a minute: Jellyfin fills it in
+4. Open **Live TV**. The channels are there with their guide. If the guide is empty, give it a few minutes: Jellyfin fills it in
    shortly after starting.
 
 Needs Jellyfin 12.3 or newer. There is nothing to set up. To remove it, uninstall the plugin; the Spelunkr entries
@@ -29,8 +31,10 @@ config folder, and restart Jellyfin.
 ## What you'll see
 
 - The film that is on spelunkr.tv right now, at the same minute, plus the ads and the short text "bumps" between
-  films. Bumps are drawn as plain cards in the channel's color; the site's pixel-art animations aren't included.
-- A guide listing each film from when it starts until the next one starts.
+  films, and the "up next" cards some channels show between shorts. Bumps and cards are drawn as plain cards in
+  the channel's color; the site's pixel-art animations aren't included.
+- A guide listing each film or show from when it starts until the next one starts, with its poster from the
+  Internet Archive and, where Spelunkr wrote one, a description with director and cast.
 - The picture is always 1280x720; older 4:3 films have black bars at the sides.
 
 Your Jellyfin server does the video work: it converts each film as it plays, which keeps part of one CPU core busy

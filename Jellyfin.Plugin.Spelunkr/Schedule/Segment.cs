@@ -22,7 +22,7 @@ public sealed record Segment
     /// <summary>Gets the position inside the cycle.</summary>
     public int Index { get; init; }
 
-    /// <summary>Gets "show", "ad" or "bump" (anything else is a kind this plugin does not draw yet).</summary>
+    /// <summary>Gets "show", "ad", "bump" or "up-next" (anything else is a kind this plugin shows as a slate).</summary>
     public string Kind { get; init; } = string.Empty;
 
     /// <summary>Gets the archive.org item id (shows), slice id (ads) or bump ids.</summary>
@@ -54,6 +54,15 @@ public sealed record Segment
 
     /// <summary>Gets the bump timing constants.</summary>
     public BumpLayout? Layout { get; init; }
+
+    /// <summary>Gets the film's position in its manifest (and details file); shows only.</summary>
+    public int? VideoIndex { get; init; }
+
+    /// <summary>Gets the title of the film an "up-next" card announces.</summary>
+    public string? Next { get; init; }
+
+    /// <summary>Gets the music under an "up-next" card, if any.</summary>
+    public BumpAudio? Sting { get; init; }
 
     /// <summary>Gets how far into the segment the lookup time was (lookups at a time only).</summary>
     public long OffsetMs { get; init; }

@@ -18,4 +18,5 @@
   from `bun tools/oracle/oracle.ts now <ms> --save Jellyfin.Plugin.Spelunkr.Tests/Fixtures/spelunkr`.
 - Public repo: no server paths, hostnames, IPs or personal details anywhere.
 - Build against the Jellyfin version in the csproj (`Jellyfin.Controller` 12.3.0); `targetAbi` in `release.yml` must match.
-- The offered channels are the `EnabledChannels` list in `SpelunkrSource.cs`.
+- Which channels are offered: `SpelunkrSource.IsOffered` (mirrored in `tools/check/check.ts`; keep them the same).
+- `bun test tools/oracle` runs the Bun-side tests (path safety).

@@ -49,12 +49,18 @@ public static class FfmpegJobs
                 break;
             }
 
-            case "bump":
+            case "bump" or "up-next":
             {
-                var (filter, files) = Cards(BumpCards.For(segment, look), look, offsetMs);
+                // An "up next" card names the coming film over a slice of music (the sting), like a one-slide bump.
+                // ponytail: the site animates the card's words onto the sting's beats; here it's one still card.
+                var cards = segment.Kind == "bump"
+                    ? BumpCards.For(segment, look)
+                    : [new BumpCard(0, segment.LengthMs, $"UP NEXT ON {look.Name}" + (segment.Next is null ? string.Empty : $"\n\n{segment.Next}"))];
+                var (filter, files) = Cards(cards, look, offsetMs);
                 // ponytail: one track per bump. A "full" bump has a second track for its network half on the site;
                 // here the channel's track plays under both halves.
-                var music = segment.Half == "close" ? segment.Platform?.Audio : segment.Channel?.Audio ?? segment.Platform?.Audio;
+                var music = segment.Kind == "up-next" ? segment.Sting
+                    : segment.Half == "close" ? segment.Platform?.Audio : segment.Channel?.Audio ?? segment.Platform?.Audio;
                 if (music is not null)
                 {
                     jobs.Add(new(
@@ -135,7 +141,9 @@ public static class FfmpegJobs
     }
 
     /// <summary>Breaks text into lines of about 34 characters so a 48 px line fits a 1280 px frame.</summary>
-    private static string Wrap(string text)
+    private static string Wrap(string text) => string.Join('\n', text.Split('\n').Select(WrapLine));
+
+    private static string WrapLine(string text)
     {
         var lines = new List<string>();
         var line = string.Empty;
