@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Jellyfin.Plugin.Spelunkr</RootNamespace>
+    <!-- Jint and its parser must sit next to the plugin dll in the Jellyfin plugin folder. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Built against Jellyfin 12.3; Jellyfin supplies these at runtime, so they are not shipped. -->
+    <PackageReference Include="Jellyfin.Controller" Version="12.3.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Jellyfin.Model" Version="12.3.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Jint" Version="4.17.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Schedule\engine.js" LogicalName="engine.js" />
+    <EmbeddedResource Include="Schedule\schedule.js" LogicalName="schedule.js" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jellyfin.Plugin.Spelunkr.Tests" />
+  </ItemGroup>
+
+</Project>

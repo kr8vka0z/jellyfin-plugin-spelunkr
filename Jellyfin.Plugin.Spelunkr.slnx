@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Jellyfin.Plugin.Spelunkr.Tests/Jellyfin.Plugin.Spelunkr.Tests.csproj" />
+  <Project Path="Jellyfin.Plugin.Spelunkr/Jellyfin.Plugin.Spelunkr.csproj" />
+</Solution>
