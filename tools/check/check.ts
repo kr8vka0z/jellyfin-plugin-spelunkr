@@ -48,7 +48,7 @@ let lineup: any;
 let channelIds: string[] = [];
 const manifests = new Map<string, { pointer: any; text: string; platform: string | null }[]>();
 // Same rule as SpelunkrSource.IsOffered in the plugin.
-const offered = (c: any) => Number.isInteger(c.dial) && !c.comingSoon && !c.debugOnly && !c.audioOverlay;
+const offered = (c: any) => /^[a-z0-9-]+$/.test(c.id ?? "") && Number.isInteger(c.dial) && !c.comingSoon && !c.debugOnly && !c.audioOverlay;
 
 await check("data", async () => {
   lineup = JSON.parse(await readText("lineup.json"));

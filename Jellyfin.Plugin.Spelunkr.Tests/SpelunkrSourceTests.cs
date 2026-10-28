@@ -145,6 +145,75 @@ public class SpelunkrSourceTests
         Assert.DoesNotContain(channels, c => c.Id == "gumshoe");
     }
 
+    [Theory]
+    [InlineData("../escaped")]
+    [InlineData("/etc/passwd")]
+    [InlineData("Gumshoe")]
+    [InlineData("a/b")]
+    public void Channels_with_ids_that_are_not_one_plain_name_are_not_offered(string id)
+    {
+        Assert.False(SpelunkrSource.IsOffered(new LineupChannel(id, "X", "#000000", 1, [])));
+        Assert.True(SpelunkrSource.IsOffered(new LineupChannel("late-nite-local", "X", "#000000", 11, [])));
+    }
+
+    [Theory]
+    [InlineData("../escaped")]
+    [InlineData("/tmp/rooted")]
+    public void Logo_files_stay_in_the_logo_folder_whatever_the_channel_id(string id)
+    {
+        var dir = Directory.CreateTempSubdirectory("spelunkr-logos").FullName;
+        try
+        {
+            var channel = new LineupChannel(id, "X", "#E8DFC8", 1, [], Logomark: new Logomark("pixel", ["c."]));
+
+            var path = SpelunkrTunerHost.LogoFile(dir, channel, NullLogger.Instance);
+
+            Assert.Equal(dir, Path.GetDirectoryName(path));
+            Assert.True(File.Exists(path));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public async Task A_fetch_that_times_out_only_costs_that_channel_or_its_descriptions()
+    {
+        // HttpClient reports its own timeout as TaskCanceledException while the caller's token is still live.
+        var source = new SpelunkrSource(
+            (path, _) => path is "manifests/homeroom/v21.json" or "details/gumshoe/v19.json"
+                ? throw new TaskCanceledException("timed out", new TimeoutException())
+                : Task.FromResult(File.ReadAllText(Path.Combine(ScheduleEngineTests.FixtureDir, path))),
+            NullLogger<SpelunkrSource>.Instance);
+
+        var channels = await source.GetChannelsAsync(CancellationToken.None);
+        var film = await source.SegmentAtAsync("gumshoe", 1_793_215_002_819, CancellationToken.None);
+
+        Assert.Equal(["gumshoe"], channels.Select(c => c.Id)); // homeroom's manifest timed out; gumshoe unaffected
+        Assert.Null(source.Details("gumshoe", film)); // its details timed out: titles only
+    }
+
+    [Fact]
+    public async Task A_real_cancellation_still_stops_the_load()
+    {
+        using var cts = new CancellationTokenSource();
+        var source = new SpelunkrSource(
+            (path, ct) =>
+            {
+                if (path.StartsWith("manifests/", StringComparison.Ordinal))
+                {
+                    cts.Cancel();
+                    ct.ThrowIfCancellationRequested();
+                }
+
+                return Task.FromResult(File.ReadAllText(Path.Combine(ScheduleEngineTests.FixtureDir, path)));
+            },
+            NullLogger<SpelunkrSource>.Instance);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => source.GetChannelsAsync(cts.Token));
+    }
+
     private sealed class Clock(DateTimeOffset now) : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = now;

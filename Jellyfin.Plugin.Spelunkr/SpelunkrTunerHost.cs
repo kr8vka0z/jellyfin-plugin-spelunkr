@@ -65,7 +65,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
         return channels.Select(c =>
         {
             var info = ToChannelInfo(c, tuner.Id);
-            info.ImagePath = LogoFile(logos, c);
+            info.ImagePath = LogoFile(logos, c, _logger);
             return info;
         }).ToList();
     }
@@ -113,16 +113,17 @@ public sealed class SpelunkrTunerHost : ITunerHost
     /// <summary>
     /// The channel's logo as a PNG file Jellyfin reads directly, drawn on first use. The name carries a hash of
     /// the logo, so a redrawn logo gets a new file. Re-drawn whenever missing (the cache folder can be emptied).
+    /// The file name is the hash alone: the channel id comes from Spelunkr's data and never goes into a path.
     /// </summary>
-    private string? LogoFile(string dir, LineupChannel c)
+    internal static string? LogoFile(string dir, LineupChannel c, ILogger logger)
     {
         if (c.Logomark is not { Type: "pixel", Rows: { Count: > 0 } rows })
         {
             return null;
         }
 
-        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(c.Color + string.Concat(rows))))[..12];
-        var path = Path.Combine(dir, $"{c.Id}-{hash}.png");
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(c.Color + string.Concat(rows))))[..16];
+        var path = Path.Combine(dir, $"{hash}.png");
         try
         {
             if (!File.Exists(path))
@@ -135,7 +136,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _logger.LogWarning(ex, "Could not write the logo for Spelunkr channel {Channel}", c.Id);
+            logger.LogWarning(ex, "Could not write the logo for Spelunkr channel {Channel}", c.Id);
             return null;
         }
     }

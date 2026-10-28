@@ -1,5 +1,6 @@
 // SpelunkrSource: fetches Spelunkr's public lineup, manifests and platform files, keeps the schedule engine
 // loaded with every version the lineup lists, and answers schedule questions for the tuner and the guide.
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Jellyfin.Plugin.Spelunkr.Schedule;
@@ -28,7 +29,9 @@ public sealed partial class SpelunkrSource
     private readonly SemaphoreSlim _refresh = new(1, 1);
     private readonly Dictionary<string, string> _platforms = new(StringComparer.Ordinal);
     private readonly HashSet<(string Channel, string Manifest)> _loadedManifests = [];
-    private readonly Dictionary<(string Channel, int Version), IReadOnlyList<ItemDetails>> _details = [];
+    // _platforms and _loadedManifests are only touched under _refresh. _details is also read by the guide while a
+    // refresh may be writing it, hence the concurrent dictionary.
+    private readonly ConcurrentDictionary<(string Channel, int Version), IReadOnlyList<ItemDetails>> _details = new();
     private Lineup? _lineup;
     private DateTimeOffset _nextRefreshUtc;
 
@@ -105,7 +108,7 @@ public sealed partial class SpelunkrSource
                             added |= await LoadVersionAsync(channel.Id, pointer, cancellationToken).ConfigureAwait(false);
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    catch (Exception ex) when (!IsCallerCancel(ex, cancellationToken))
                     {
                         _logger.LogWarning(ex, "Could not load Spelunkr channel {Channel}", channel.Id);
                     }
@@ -121,7 +124,7 @@ public sealed partial class SpelunkrSource
                 _lineup = lineup;
                 _nextRefreshUtc = _time.GetUtcNow() + LineupMaxAge;
             }
-            catch (Exception ex) when (_lineup is not null && ex is not OperationCanceledException)
+            catch (Exception ex) when (_lineup is not null && !IsCallerCancel(ex, cancellationToken))
             {
                 // Keep playing from what we already have; Spelunkr being briefly unreachable shouldn't stop a channel.
                 _logger.LogWarning(ex, "Could not refresh the Spelunkr lineup; using the copy from earlier");
@@ -145,7 +148,11 @@ public sealed partial class SpelunkrSource
     /// a playlist of archive.org recordings picked per film by the engine and looked up through archive.org's
     /// metadata API; this plugin doesn't build that music track yet, and the films alone would play in silence.
     /// </remarks>
-    internal static bool IsOffered(LineupChannel c) => c.Dial is not null && !c.ComingSoon && !c.DebugOnly && !c.AudioOverlay;
+    internal static bool IsOffered(LineupChannel c) => SafeId().IsMatch(c.Id) && c.Dial is not null && !c.ComingSoon && !c.DebugOnly && !c.AudioOverlay;
+
+    // Channel ids end up in Jellyfin ids, URLs and logs; Spelunkr's own tooling only makes ids of this shape.
+    [GeneratedRegex("^[a-z0-9-]+$")]
+    private static partial Regex SafeId();
 
     /// <summary>Spelunkr's write-up of a film (description, director, cast), if its details file had one.</summary>
     public ItemDetails? Details(string channelId, Segment show)
@@ -199,6 +206,13 @@ public sealed partial class SpelunkrSource
         return true;
     }
 
+    /// <summary>
+    /// True only when the caller asked to stop. HttpClient reports its own timeout as a cancellation too; that one
+    /// is an ordinary fetch failure and must be handled like any other.
+    /// </summary>
+    private static bool IsCallerCancel(Exception ex, CancellationToken cancellationToken)
+        => ex is OperationCanceledException && cancellationToken.IsCancellationRequested;
+
     /// <summary>Loads a version's details file (film descriptions for the guide). Optional: a failure only costs descriptions.</summary>
     private async Task LoadDetailsAsync(string channelId, JsonElement pointer, CancellationToken cancellationToken)
     {
@@ -212,7 +226,7 @@ public sealed partial class SpelunkrSource
             var details = JsonSerializer.Deserialize<DetailsFile>(await _read(BucketPath(path), cancellationToken).ConfigureAwait(false), ScheduleEngine.Json);
             _details[(channelId, pointer.GetProperty("v").GetInt32())] = details?.Items ?? [];
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidDataException)
+        catch (Exception ex) when (!IsCallerCancel(ex, cancellationToken))
         {
             _logger.LogWarning(ex, "Could not load Spelunkr film details {Path}; the guide shows titles only", path);
         }
