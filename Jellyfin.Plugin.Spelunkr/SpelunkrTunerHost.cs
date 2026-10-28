@@ -61,7 +61,13 @@ public sealed class SpelunkrTunerHost : ITunerHost
         }
 
         var channels = await _source.GetChannelsAsync(cancellationToken).ConfigureAwait(false);
-        return channels.Select(c => ToChannelInfo(c, tuner.Id)).ToList();
+        var logos = Path.Combine(_config.CommonApplicationPaths.CachePath, "spelunkr-logos");
+        return channels.Select(c =>
+        {
+            var info = ToChannelInfo(c, tuner.Id);
+            info.ImagePath = LogoFile(logos, c);
+            return info;
+        }).ToList();
     }
 
     /// <inheritdoc />
@@ -104,12 +110,42 @@ public sealed class SpelunkrTunerHost : ITunerHost
     /// <summary>Where open streams keep their files. Emptied at startup by Registration.</summary>
     internal static string StreamsDir(IConfigurationManager config) => Path.Combine(config.CommonApplicationPaths.CachePath, "spelunkr-streams");
 
+    /// <summary>
+    /// The channel's logo as a PNG file Jellyfin reads directly, drawn on first use. The name carries a hash of
+    /// the logo, so a redrawn logo gets a new file. Re-drawn whenever missing (the cache folder can be emptied).
+    /// </summary>
+    private string? LogoFile(string dir, LineupChannel c)
+    {
+        if (c.Logomark is not { Type: "pixel", Rows: { Count: > 0 } rows })
+        {
+            return null;
+        }
+
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(c.Color + string.Concat(rows))))[..12];
+        var path = Path.Combine(dir, $"{c.Id}-{hash}.png");
+        try
+        {
+            if (!File.Exists(path))
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllBytes(path, Guide.ChannelLogo.RenderPng(rows, c.Color));
+            }
+
+            return path;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Could not write the logo for Spelunkr channel {Channel}", c.Id);
+            return null;
+        }
+    }
+
     internal static ChannelInfo ToChannelInfo(LineupChannel c, string tunerHostId) => new()
     {
         Id = ChannelIdPrefix + c.Id,
         TunerChannelId = c.Id,
         Name = c.Name,
-        Number = c.Dial.ToString(CultureInfo.InvariantCulture),
+        Number = c.Dial?.ToString(CultureInfo.InvariantCulture),
         ChannelType = ChannelType.TV,
         TunerHostId = tunerHostId,
     };
