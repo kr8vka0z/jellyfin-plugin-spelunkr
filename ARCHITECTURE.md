@@ -22,7 +22,7 @@ continuous TV stream.
   from its start to the next film's start.
 - **Registration** (`Registration.cs`): on startup adds a Spelunkr tuner entry and guide entry to Live TV settings.
 - **Stream** (`Stream/`): `ChannelStream` runs one ffmpeg per schedule segment and appends the output to a file
-  Jellyfin serves to its players. `FfmpegJobs` builds the commands, `SegmentPlayer` walks the fallbacks,
+  Jellyfin serves to its players. `FfmpegJobs` builds the commands, `StreamPump` walks the schedule, `SegmentPlayer` walks the fallbacks,
   `FfmpegProcess` runs one job and measures what it wrote, `BumpCards` times the bump text, `Pacing` keeps the
   stream on the wall clock.
 
@@ -50,8 +50,9 @@ continuous TV stream.
   be built on demand. The registration pattern follows the Jellyfin-Xtream-Library plugin.
 - **One ffmpeg per segment, re-encoded to fixed settings.** Archive files differ in size and codec, and a mid-stream
   change breaks players. If a job fails or stops part-way, the next fallback ("same with silence", then a title card)
-  carries on from the exact point it stopped (ffmpeg reports how much it wrote); if all fail, the rest of that
-  segment is skipped with no gap in the timestamps. Remote inputs have a 15 s read timeout, and a job that writes
+  carries on from the exact point it stopped (ffmpeg reports how much it wrote); if all fail, the stream moves
+  on by only what was written and asks the schedule again (jumping to now if it fell behind); if nothing at all
+  can be written, not even the title card, the stream stops instead of retrying. Remote inputs have a 15 s read timeout, and a job that writes
   nothing for 45 s is killed.
 - **Pacing:** ffmpeg reads at playback speed after a 10-second head start; the stream may run up to 30 s ahead of
   the clock and skips forward if it falls more than 15 s behind.

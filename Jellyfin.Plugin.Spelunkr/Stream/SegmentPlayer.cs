@@ -14,7 +14,7 @@ internal static class SegmentPlayer
     /// <summary>
     /// Plays <paramref name="durationMs"/> of <paramref name="segment"/> from <paramref name="offsetMs"/>.
     /// <paramref name="run"/> runs one ffmpeg job and returns how many ms it emitted. Returns the ms emitted in total:
-    /// less than asked only when every fallback failed, and the caller then skips the rest of the segment.
+    /// less than asked only when every fallback failed; StreamPump then carries on from what was written.
     /// </summary>
     public static async Task<long> PlayAsync(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS, Func<FfmpegJob, CancellationToken, Task<long>> run, ILogger logger, CancellationToken ct)
     {
@@ -25,7 +25,7 @@ internal static class SegmentPlayer
             var jobs = FfmpegJobs.For(segment, look, offsetMs + done, durationMs - done, outputOffsetS + (done / 1000.0));
             if (level >= jobs.Count)
             {
-                logger.LogError("Spelunkr: every fallback failed for {Kind} {Id}; skipping its last {Seconds} s", segment.Kind, segment.Id, (durationMs - done) / 1000);
+                logger.LogError("Spelunkr: every fallback failed for {Kind} {Id} with {Seconds} s still to play", segment.Kind, segment.Id, (durationMs - done) / 1000);
                 break;
             }
 

@@ -106,46 +106,21 @@ internal sealed class ChannelStream : ILiveStream
             var output = new FileStream(_filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete, 65536, FileOptions.Asynchronous);
             await using (output.ConfigureAwait(false))
             {
-                // contentMs: the schedule time the stream has reached. outputS: the stream's own clock, which only
-                // counts what was written, so timestamps keep rising even when we skip ahead.
-                var contentMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                var outputS = 0.0;
-                while (!ct.IsCancellationRequested)
-                {
-                    (contentMs, var waitMs) = Pacing.Next(contentMs, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-                    if (waitMs > 0)
-                    {
-                        await Task.Delay(TimeSpan.FromMilliseconds(waitMs), ct).ConfigureAwait(false);
-                    }
-
-                    var segment = await _source.SegmentAtAsync(_channelId, contentMs, ct).ConfigureAwait(false);
-                    var durationMs = segment.EndMs - contentMs;
-                    if (durationMs < SegmentPlayer.MinJobMs)
-                    {
-                        // Joined at the very end of a segment: not worth starting ffmpeg for.
-                        contentMs = segment.EndMs;
-                        continue;
-                    }
-
-                    var emittedMs = await SegmentPlayer.PlayAsync(
+                await StreamPump.RunAsync(
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    (atMs, c) => _source.SegmentAtAsync(_channelId, atMs, c),
+                    (segment, offsetMs, durationMs, outputS, c) => SegmentPlayer.PlayAsync(
                         segment,
                         _look,
-                        contentMs - segment.StartMs,
+                        offsetMs,
                         durationMs,
                         outputS,
-                        (job, c) => FfmpegProcess.RunAsync(_ffmpegPath, job, _workDir, output, () => started.TrySetResult(), StallTimeout, _logger, c),
+                        (job, c2) => FfmpegProcess.RunAsync(_ffmpegPath, job, _workDir, output, () => started.TrySetResult(), StallTimeout, _logger, c2),
                         _logger,
-                        ct).ConfigureAwait(false);
-                    if (emittedMs == 0 && !started.Task.IsCompleted)
-                    {
-                        throw new IOException($"ffmpeg produced nothing for {segment.Kind} {segment.Id} or any fallback");
-                    }
-
-                    // The schedule moves on by the whole segment; the stream's clock only by what was written, so a
-                    // segment that failed completely is skipped with no gap in the timestamps.
-                    contentMs += durationMs;
-                    outputS += emittedMs / 1000.0;
-                }
+                        c),
+                    Task.Delay,
+                    ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
