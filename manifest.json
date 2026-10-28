@@ -6,6 +6,15 @@
     "overview": "Spelunkr.tv channels in Live TV, with a guide",
     "owner": "kr8vka0z",
     "category": "Live TV",
-    "versions": []
+    "versions": [
+      {
+        "version": "0.1.1.0",
+        "changelog": "https://github.com/kr8vka0z/jellyfin-plugin-spelunkr/releases/tag/v0.1.1",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/kr8vka0z/jellyfin-plugin-spelunkr/releases/download/v0.1.1/jellyfin-plugin-spelunkr_0.1.1.0.zip",
+        "checksum": "03f7a4e60e8c2d6675395ab96640f3fd",
+        "timestamp": "2026-10-28T23:15:49Z"
+      }
+    ]
   }
 ]
