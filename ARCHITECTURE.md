@@ -58,5 +58,9 @@ continuous TV stream.
   hence Registration. Deleting the Spelunkr tuner entry hides the channels until the next restart re-adds it.
 - Jellyfin asks every tuner about every channel. A tuner must throw `FileNotFoundException` (stream) or return an
   empty list (media sources) for channels it doesn't own, or it breaks other tuners.
+- Stream files live in `<cache>/spelunkr-streams`, not Jellyfin's transcode folder: Jellyfin empties the transcode
+  folder when its transcoding service first starts, which killed a stream opened right after a restart.
+- At each join between segments the audio overlaps by a few tens of milliseconds (AAC encoder start-up);
+  players drop the extra packets. Video has no overlap because B-frames are off.
 - The daily check (`tools/check`) flags any change in the extracted engine code, including a rebuild that only
   renamed minified names. The "live" check says whether the schedule really changed.

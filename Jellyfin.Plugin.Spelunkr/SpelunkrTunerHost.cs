@@ -82,7 +82,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
             ?? throw new FileNotFoundException($"Spelunkr channel {id} is not offered");
         var tuner = Registration.FindTuner(_config) ?? throw new FileNotFoundException("Spelunkr tuner is not set up");
 
-        var stream = new ChannelStream(id, new ChannelLook(channel.Name, channel.Color), NewMediaSource(channelId), tuner.Id, _source, _mediaEncoder.EncoderPath, _config.GetTranscodePath(), _appHost, _logger);
+        var stream = new ChannelStream(id, new ChannelLook(channel.Name, channel.Color), NewMediaSource(channelId), tuner.Id, _source, _mediaEncoder.EncoderPath, StreamsDir(_config), _appHost, _logger);
         try
         {
             await stream.Open(cancellationToken).ConfigureAwait(false);
@@ -100,6 +100,9 @@ public sealed class SpelunkrTunerHost : ITunerHost
     /// <inheritdoc />
     public Task<List<TunerHostInfo>> DiscoverDevices(int discoveryDurationMs, CancellationToken cancellationToken)
         => Task.FromResult(new List<TunerHostInfo>());
+
+    /// <summary>Where open streams keep their files. Emptied at startup by Registration.</summary>
+    internal static string StreamsDir(IConfigurationManager config) => Path.Combine(config.CommonApplicationPaths.CachePath, "spelunkr-streams");
 
     internal static ChannelInfo ToChannelInfo(LineupChannel c, string tunerHostId) => new()
     {

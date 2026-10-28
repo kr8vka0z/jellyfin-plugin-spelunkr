@@ -1,6 +1,8 @@
 // ChannelStream: one open Spelunkr channel. Runs ffmpeg segment after segment (film, bump, ad, bump, film...)
-// and appends the MPEG-TS output to a file that Jellyfin serves at /LiveTv/LiveStreamFiles/<id>/stream.ts,
-// the same way Jellyfin's own tuners hand a live stream to its player.
+// and appends the MPEG-TS output to a file that Jellyfin serves at /LiveTv/LiveStreamFiles/<id>/stream.ts
+// (through GetStream), the same way Jellyfin's own tuners hand a live stream to its player.
+// The file lives in the plugin's own cache folder, not Jellyfin's transcode folder: Jellyfin empties the transcode
+// folder when its transcoding service first starts, which deleted a stream opened just after a restart.
 using System.Diagnostics;
 using System.Globalization;
 using Jellyfin.Plugin.Spelunkr.Schedule;
@@ -30,7 +32,7 @@ internal sealed class ChannelStream : ILiveStream
     private Task? _pump;
     private DateTime _openedUtc;
 
-    public ChannelStream(string channelId, ChannelLook look, MediaSourceInfo mediaSource, string tunerHostId, SpelunkrSource source, string ffmpegPath, string transcodeDir, IServerApplicationHost appHost, ILogger logger)
+    public ChannelStream(string channelId, ChannelLook look, MediaSourceInfo mediaSource, string tunerHostId, SpelunkrSource source, string ffmpegPath, string streamsDir, IServerApplicationHost appHost, ILogger logger)
     {
         _channelId = channelId;
         _look = look;
@@ -41,8 +43,8 @@ internal sealed class ChannelStream : ILiveStream
         MediaSource = mediaSource;
         TunerHostId = tunerHostId;
         UniqueId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-        _filePath = Path.Combine(transcodeDir, UniqueId + ".ts");
-        _workDir = Path.Combine(transcodeDir, "spelunkr-" + UniqueId);
+        _filePath = Path.Combine(streamsDir, UniqueId + ".ts");
+        _workDir = Path.Combine(streamsDir, UniqueId);
     }
 
     public int ConsumerCount { get; set; } = 1;

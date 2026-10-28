@@ -43,6 +43,20 @@ public sealed class Registration : IHostedService
     /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        // No stream is open yet at startup, so anything here is left over from before a crash or restart.
+        var streams = SpelunkrTunerHost.StreamsDir(_config);
+        try
+        {
+            if (Directory.Exists(streams))
+            {
+                Directory.Delete(streams, recursive: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Could not clear old Spelunkr stream files in {Path}", streams);
+        }
+
         try
         {
             var added = false;
