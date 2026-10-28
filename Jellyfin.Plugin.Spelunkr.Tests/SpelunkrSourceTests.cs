@@ -8,7 +8,7 @@ namespace Jellyfin.Plugin.Spelunkr.Tests;
 
 public class SpelunkrSourceTests
 {
-    private static SpelunkrSource FromFixtures(List<string>? reads = null) => new(
+    internal static SpelunkrSource FromFixtures(List<string>? reads = null) => new(
         (path, _) =>
         {
             reads?.Add(path);
@@ -79,6 +79,39 @@ public class SpelunkrSourceTests
         Assert.Equal(20, after.Version);
         Assert.Equal(19, before.Version);
         Assert.Equal(1, guideRefreshes);
+    }
+
+    [Theory]
+    [InlineData("manifests/gumshoe/v19.json#/../../../.github/workflows/build.yml")]
+    [InlineData("manifests/../../secrets.json")]
+    [InlineData("/etc/passwd")]
+    [InlineData("platform/x.json?y=1")]
+    [InlineData("https://elsewhere.example/x.json")]
+    public async Task Refuses_data_paths_that_leave_the_bucket(string badPath)
+    {
+        // A manifest or platform path comes from Spelunkr's data and is appended to the bucket URL.
+        var lineup = File.ReadAllText(Path.Combine(ScheduleEngineTests.FixtureDir, "lineup.json"))
+            .Replace("\"manifests/gumshoe/v19.json\"", System.Text.Json.JsonSerializer.Serialize(badPath), StringComparison.Ordinal);
+        var source = new SpelunkrSource((path, _) => path == "lineup.json" ? Task.FromResult(lineup) : throw new InvalidOperationException("fetched " + path), NullLogger<SpelunkrSource>.Instance);
+
+        var ex = await Assert.ThrowsAsync<InvalidDataException>(() => source.GetChannelsAsync(CancellationToken.None));
+        Assert.Contains("not a plain bucket path", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Refuses_a_platform_path_that_leaves_the_bucket()
+    {
+        var source = new SpelunkrSource(
+            (path, _) => path switch
+            {
+                "manifests/gumshoe/v19.json" => Task.FromResult(File.ReadAllText(Path.Combine(ScheduleEngineTests.FixtureDir, path))
+                    .Replace("\"platform/294b0bf5ae4d1917.json\"", "\"platform/../../x.json\"", StringComparison.Ordinal)),
+                "lineup.json" => Task.FromResult(File.ReadAllText(Path.Combine(ScheduleEngineTests.FixtureDir, path))),
+                _ => throw new InvalidOperationException("fetched " + path),
+            },
+            NullLogger<SpelunkrSource>.Instance);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => source.GetChannelsAsync(CancellationToken.None));
     }
 
     private sealed class Clock(DateTimeOffset now) : TimeProvider

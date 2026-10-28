@@ -1,6 +1,7 @@
 // SpelunkrSource: fetches Spelunkr's public lineup, manifests and platform files, keeps the schedule engine
 // loaded with every version the lineup lists, and answers schedule questions for the tuner and the guide.
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Jellyfin.Plugin.Spelunkr.Schedule;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Model.Tasks;
@@ -9,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.Spelunkr;
 
 /// <summary>Spelunkr's data plus the schedule engine, shared by the tuner and the guide.</summary>
-public sealed class SpelunkrSource
+public sealed partial class SpelunkrSource
 {
     /// <summary>Spelunkr's public storage bucket (no login needed).</summary>
     public const string Bucket = "https://jbuopkuluyfjwgsrigry.supabase.co/storage/v1/object/public/broadcast/";
@@ -127,11 +128,27 @@ public sealed class SpelunkrSource
         }
     }
 
+    /// <summary>
+    /// A path taken from Spelunkr's data (manifest, platform file) that is about to be appended to the bucket URL.
+    /// Only plain relative paths are accepted: no "..", no query or fragment, no scheme, so data can't point us elsewhere.
+    /// </summary>
+    internal static string BucketPath(string? path)
+    {
+        if (path is null || !PlainPath().IsMatch(path) || path.Split('/').Any(part => part is "." or ".."))
+        {
+            throw new InvalidDataException($"'{path}' is not a plain bucket path");
+        }
+
+        return path;
+    }
+
+    [GeneratedRegex("^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$")]
+    private static partial Regex PlainPath();
+
     /// <summary>Loads one version into the engine; false if it was already loaded.</summary>
     private async Task<bool> LoadVersionAsync(string channelId, JsonElement pointer, CancellationToken cancellationToken)
     {
-        var manifestPath = pointer.GetProperty("manifest").GetString()
-            ?? throw new InvalidDataException($"{channelId}: version without a manifest path");
+        var manifestPath = BucketPath(pointer.GetProperty("manifest").GetString());
         if (_loadedManifests.Contains(manifestPath))
         {
             return false;
@@ -141,8 +158,9 @@ public sealed class SpelunkrSource
         string? platform = null;
         using (var doc = JsonDocument.Parse(manifest))
         {
-            if (doc.RootElement.TryGetProperty("platform", out var p) && p.GetString() is { Length: > 0 } platformPath)
+            if (doc.RootElement.TryGetProperty("platform", out var p) && p.GetString() is { Length: > 0 } platformRef)
             {
+                var platformPath = BucketPath(platformRef);
                 if (!_platforms.TryGetValue(platformPath, out platform))
                 {
                     platform = await _read(platformPath, cancellationToken).ConfigureAwait(false);

@@ -19,3 +19,5 @@ jobs:
           global-json-file: global.json
       - run: dotnet build -c Release
       - run: dotnet test -c Release --no-build
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun test tools/oracle
