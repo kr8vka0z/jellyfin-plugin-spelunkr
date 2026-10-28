@@ -33,8 +33,8 @@ config folder, and restart Jellyfin.
 - A guide listing each film from when it starts until the next one starts.
 - The picture is always 1280x720; older 4:3 films have black bars at the sides.
 
-Your Jellyfin server does the video work (it converts each film as it plays), so expect one CPU core busy while
-someone is watching.
+Your Jellyfin server does the video work: it converts each film as it plays, which keeps part of one CPU core busy
+while someone is watching.
 
 ## Not affiliated
 

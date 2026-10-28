@@ -89,10 +89,14 @@ public static class FfmpegJobs
     private static string[] Color(ChannelLook look) =>
         [.. Paced, "-f", "lavfi", "-i", $"color=c=0x{look.Color.TrimStart('#')}:s=1280x720:r=30"];
 
+    // No B-frames (-bf 0): with them each job's first video timestamps start slightly before the previous job's
+    // last ones, which players see as time going backwards at every join.
+    // ponytail: the audio still overlaps by ~40 ms at each join (AAC encoder priming); players drop the extra
+    // packets. A single long-running encoder fed by per-segment decoders would remove that, at more complexity.
     private static string[] Tail(long durationMs, double outputOffsetS) =>
     [
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", "3000k", "-bufsize", "6000k",
-        "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+        "-g", "60", "-keyint_min", "60", "-sc_threshold", "0", "-bf", "0",
         "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000",
         "-t", Seconds(durationMs), "-output_ts_offset", outputOffsetS.ToString("0.000", CultureInfo.InvariantCulture),
         "-f", "mpegts", "pipe:1",
