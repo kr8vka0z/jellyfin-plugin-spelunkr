@@ -32,6 +32,24 @@ public class GuideTests
     }
 
     [Fact]
+    public async Task A_window_starting_and_ending_in_breaks_keeps_both_boundary_films_whole()
+    {
+        // Starts in the bump after The Long Night (film ended 1793220818819), ends in the bump after Forbidden
+        // (film ended 1793225961459). Fixture: Fixtures/timeline-1793217600000.jsonl.
+        var guide = new SpelunkrGuide(SpelunkrSourceTests.FromFixtures());
+        var start = DateTimeOffset.FromUnixTimeMilliseconds(1_793_220_823_819).UtcDateTime;
+        var end = DateTimeOffset.FromUnixTimeMilliseconds(1_793_225_970_000).UtcDateTime;
+
+        var programs = (await guide.GetProgramsAsync(new(), "spelunkr_gumshoe", start, end, CancellationToken.None)).ToList();
+
+        Assert.Equal(["The Long Night", "Forbidden"], programs.Select(p => p.Name));
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1_793_215_002_819).UtcDateTime, programs[0].StartDate);
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1_793_220_913_459).UtcDateTime, programs[0].EndDate);
+        // Forbidden runs until Shadow of Terror starts, past the end of the window.
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1_793_226_108_541).UtcDateTime, programs[1].EndDate);
+    }
+
+    [Fact]
     public void Program_ids_are_stable_across_refreshes()
     {
         var a = GuidePrograms.Build(Day(), "spelunkr_gumshoe");
