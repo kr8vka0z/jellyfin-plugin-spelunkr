@@ -59,7 +59,6 @@ public sealed class Registration : IHostedService
 
         try
         {
-            var added = false;
             var tuner = FindTuner(_config);
             if (tuner is null)
             {
@@ -67,40 +66,59 @@ public sealed class Registration : IHostedService
                     new TunerHostInfo { Type = SpelunkrTunerHost.TunerType, FriendlyName = "Spelunkr", Url = "https://spelunkr.tv" },
                     dataSourceChanged: false).ConfigureAwait(false);
                 _logger.LogInformation("Added the Spelunkr tuner to Live TV");
-                added = true;
             }
 
             var options = _config.GetConfiguration<LiveTvOptions>(LiveTvConfigKey);
-            var guides = options.ListingProviders ?? [];
-            if (!guides.Any(g => string.Equals(g.Type, SpelunkrGuide.ProviderType, StringComparison.OrdinalIgnoreCase)))
+            if (EnsureGuideEntry(options, tuner.Id))
             {
-                options.ListingProviders =
-                [
-                    .. guides,
-                    new ListingsProviderInfo
-                    {
-                        Id = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
-                        Type = SpelunkrGuide.ProviderType,
-                        // Only our tuner: other tuners' channels never match Spelunkr's schedule.
-                        EnableAllTuners = false,
-                        EnabledTuners = [tuner.Id],
-                    },
-                ];
                 _config.SaveConfiguration(LiveTvConfigKey, options);
-                _logger.LogInformation("Added the Spelunkr guide to Live TV");
-                added = true;
+                _logger.LogInformation("Set up the Spelunkr guide in Live TV");
             }
 
-            if (added)
-            {
-                _ = QueueGuideRefreshAsync(_taskManager, _logger);
-            }
+            // Refresh the guide on every start, not only when entries were added: Spelunkr may have published a
+            // new schedule version while Jellyfin was off, and Jellyfin's own guide task only runs daily.
+            _ = QueueGuideRefreshAsync(_taskManager, _logger);
         }
         catch (Exception ex)
         {
             // Never take Jellyfin's startup down with us.
             _logger.LogError(ex, "Could not add Spelunkr to Live TV");
         }
+    }
+
+    /// <summary>
+    /// Makes sure there is one Spelunkr guide entry and that it points at <paramref name="tunerId"/>. A user who
+    /// deletes the Spelunkr tuner gets a new one (new id) on restart; the guide entry must follow it, because
+    /// Jellyfin only asks a guide source about the tuners it names. Returns whether anything changed.
+    /// </summary>
+    internal static bool EnsureGuideEntry(LiveTvOptions options, string tunerId)
+    {
+        var guides = options.ListingProviders ?? [];
+        var ours = guides.FirstOrDefault(g => string.Equals(g.Type, SpelunkrGuide.ProviderType, StringComparison.OrdinalIgnoreCase));
+        if (ours is null)
+        {
+            options.ListingProviders =
+            [
+                .. guides,
+                new ListingsProviderInfo
+                {
+                    Id = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
+                    Type = SpelunkrGuide.ProviderType,
+                    // Only our tuner: other tuners' channels never match Spelunkr's schedule.
+                    EnableAllTuners = false,
+                    EnabledTuners = [tunerId],
+                },
+            ];
+            return true;
+        }
+
+        if (ours.EnableAllTuners || (ours.EnabledTuners ?? []).Contains(tunerId, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        ours.EnabledTuners = [tunerId];
+        return true;
     }
 
     /// <inheritdoc />
