@@ -126,6 +126,7 @@ if (!flag("--skip-live")) {
       await page.goto(`https://spelunkr.tv/${channelId}`, { waitUntil: "domcontentloaded" });
       // Bumps have no video file, so wait (up to 5 minutes) until the site plays an archive.org video.
       let lastSeen = "nothing";
+      let mismatches = 0;
       for (let i = 0; i < 60; i++) {
         await page.waitForTimeout(5000);
         const s = await page.evaluate(() => {
@@ -138,7 +139,9 @@ if (!flag("--skip-live")) {
         lastSeen = `site plays ${s.src} at ${s.t.toFixed(1)} s; engine says ${want.kind} ${want.url ?? want.id} at ${wantS.toFixed(1)} s`;
         if (want.kind === "bump") continue; // caught the hand-over between a video and a bump; look again
         if (s.src === want.url && Math.abs(s.t - wantS) <= LIVE_TOLERANCE_S) return lastSeen;
-        throw new Error(lastSeen);
+        // The site runs about a second behind the engine, so a sample taken at a hand-over (film to ad) can
+        // disagree for a moment. Only a second disagreement 5 s later counts.
+        if (mismatches++ > 0) throw new Error(lastSeen);
       }
       throw new Error(`no playing archive.org video on spelunkr.tv/${channelId} within 5 minutes (last: ${lastSeen})`);
     } finally {

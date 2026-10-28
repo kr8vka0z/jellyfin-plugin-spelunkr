@@ -93,7 +93,7 @@ public sealed class Registration : IHostedService
 
             if (added)
             {
-                _ = QueueGuideRefreshAsync();
+                _ = QueueGuideRefreshAsync(_taskManager, _logger);
             }
         }
         catch (Exception ex)
@@ -106,22 +106,23 @@ public sealed class Registration : IHostedService
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    // Scheduled tasks are registered after plugins start, so wait (up to 3 minutes) for the guide task to exist.
-    private async Task QueueGuideRefreshAsync()
+    /// <summary>Asks Jellyfin to rebuild the TV guide now.</summary>
+    /// <remarks>At startup scheduled tasks are registered after plugins start, so this waits up to 3 minutes for it.</remarks>
+    internal static async Task QueueGuideRefreshAsync(ITaskManager taskManager, ILogger logger)
     {
         for (var i = 0; i < 36; i++)
         {
-            var refresh = _taskManager.ScheduledTasks.FirstOrDefault(t => t.ScheduledTask.Key == RefreshGuideTaskKey);
+            var refresh = taskManager.ScheduledTasks.FirstOrDefault(t => t.ScheduledTask.Key == RefreshGuideTaskKey);
             if (refresh is not null)
             {
-                _taskManager.QueueScheduledTask(refresh.ScheduledTask, new TaskOptions());
-                _logger.LogInformation("Queued a guide refresh for Spelunkr");
+                taskManager.QueueScheduledTask(refresh.ScheduledTask, new TaskOptions());
+                logger.LogInformation("Queued a guide refresh for Spelunkr");
                 return;
             }
 
             await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         }
 
-        _logger.LogInformation("Guide refresh task not found; Spelunkr's guide fills in at the next scheduled refresh");
+        logger.LogInformation("Guide refresh task not found; Spelunkr's guide fills in at the next scheduled refresh");
     }
 }
