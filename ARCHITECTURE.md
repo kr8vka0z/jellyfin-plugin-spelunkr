@@ -22,13 +22,17 @@ continuous TV stream.
   from its start to the next film's start.
 - **Registration** (`Registration.cs`): on startup adds a Spelunkr tuner entry and guide entry to Live TV settings.
 - **Stream** (`Stream/`): `ChannelStream` runs one ffmpeg per schedule segment and appends the output to a file
-  Jellyfin serves to its players. `FfmpegJobs` builds the commands, `BumpCards` times the bump text, `Pacing`
-  keeps the stream on the wall clock.
+  Jellyfin serves to its players. `FfmpegJobs` builds the commands, `SegmentPlayer` walks the fallbacks,
+  `FfmpegProcess` runs one job and measures what it wrote, `BumpCards` times the bump text, `Pacing` keeps the
+  stream on the wall clock.
 
 ## Data flow
 
-1. Startup: Registration saves the tuner and guide entries; Jellyfin refreshes its guide, which calls the guide
-   source, which asks SpelunkrSource for the next days of segments.
+1. Startup: Registration adds the tuner and guide entries if missing (and points the guide entry at the current
+   tuner if the tuner was recreated), then queues a guide refresh on every start, since Spelunkr may have published
+   a new schedule version while Jellyfin was off. The refresh calls the guide source, which asks SpelunkrSource for
+   the next days of segments, reaching past the window's edges so the first and last films are whole. While
+   running, a newly published version triggers another refresh.
 2. Tune in: Jellyfin calls the tuner, which opens a `ChannelStream`. It asks what is on now, starts ffmpeg at
    that point in the archive.org file, and returns once the first bytes are written. Jellyfin then serves
    `/LiveTv/LiveStreamFiles/<id>/stream.ts` (the file) to the player, transcoding if the player needs it.
@@ -45,8 +49,10 @@ continuous TV stream.
 - **Jellyfin's own tuner and guide interfaces, not an M3U/XMLTV feed.** Nothing to configure, and the stream can
   be built on demand. The registration pattern follows the Jellyfin-Xtream-Library plugin.
 - **One ffmpeg per segment, re-encoded to fixed settings.** Archive files differ in size and codec, and a mid-stream
-  change breaks players. Each job is retried as "same with silence" and then "title card" if it fails, so a dead
-  link shows a card instead of stopping the channel.
+  change breaks players. If a job fails or stops part-way, the next fallback ("same with silence", then a title card)
+  carries on from the exact point it stopped (ffmpeg reports how much it wrote); if all fail, the rest of that
+  segment is skipped with no gap in the timestamps. Remote inputs have a 15 s read timeout, and a job that writes
+  nothing for 45 s is killed.
 - **Pacing:** ffmpeg reads at playback speed after a 10-second head start; the stream may run up to 30 s ahead of
   the clock and skips forward if it falls more than 15 s behind.
 
