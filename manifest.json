@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "5f0d6b2e-7c1a-4b9e-9a43-3e2b8d4c1a07",
+    "name": "Spelunkr",
+    "description": "Adds spelunkr.tv channels (24/7 channels of old films and shows from the Internet Archive) to Live TV, with a TV guide. No setup: install, restart Jellyfin, open Live TV.",
+    "overview": "Spelunkr.tv channels in Live TV, with a guide",
+    "owner": "kr8vka0z",
+    "category": "Live TV",
+    "versions": []
+  }
+]
