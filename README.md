@@ -1,7 +1,7 @@
 # Spelunkr for Jellyfin
 
 Watch [spelunkr.tv](https://spelunkr.tv) in Jellyfin. Spelunkr runs round-the-clock TV channels of old films,
-ads and shows from the Internet Archive, the same programme for everyone at the same time. This plugin adds
+ads and shows from the Internet Archive, the same program for everyone at the same time. This plugin adds
 those channels to Jellyfin's **Live TV**, with a TV guide, so you can tune in from any Jellyfin app and see
 what everyone on spelunkr.tv is watching right now.
 
