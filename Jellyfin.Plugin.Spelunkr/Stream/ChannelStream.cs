@@ -113,6 +113,7 @@ internal sealed class ChannelStream : ILiveStream
             var output = new FileStream(_filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete, 65536, FileOptions.Asynchronous);
             await using (output.ConfigureAwait(false))
             {
+                Task<long> Run(FfmpegJob job, CancellationToken c) => FfmpegProcess.RunAsync(_ffmpegPath, job, _workDir, output, () => started.TrySetResult(), ConnectTimeout, StallTimeout, _logger, c);
                 await StreamPump.RunAsync(
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
@@ -123,11 +124,13 @@ internal sealed class ChannelStream : ILiveStream
                         offsetMs,
                         durationMs,
                         outputS,
-                        (job, c2) => FfmpegProcess.RunAsync(_ffmpegPath, job, _workDir, output, () => started.TrySetResult(), ConnectTimeout, StallTimeout, _logger, c2),
+                        Run,
                         _logger,
                         c,
                         segment.Url is null ? null : await _originals.FindAsync(segment.Url, c).ConfigureAwait(false),
-                        _picture).ConfigureAwait(false),
+                        _picture,
+                        () => _originals.Reject(segment.Url!)).ConfigureAwait(false),
+                    (segment, durationMs, c) => SegmentPlayer.PlayTuningInAsync(segment, _look, durationMs, Run, c, _picture),
                     Task.Delay,
                     ct).ConfigureAwait(false);
             }

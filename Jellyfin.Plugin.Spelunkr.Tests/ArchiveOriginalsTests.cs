@@ -50,6 +50,20 @@ public class ArchiveOriginalsTests
     }
 
     [Fact]
+    public async Task A_rejected_original_stays_rejected_even_if_a_lookup_was_already_under_way()
+    {
+        var lookup = new TaskCompletionSource<string>();
+        var originals = new ArchiveOriginals((_, _) => lookup.Task, NullLogger.Instance, TimeProvider.System, TimeSpan.FromMinutes(1));
+
+        var underWay = originals.FindAsync(Url, CancellationToken.None);
+        originals.Reject(Url);
+        lookup.SetResult(Metadata(M4v("867.9", "343411932")));
+
+        Assert.Null(await underWay);
+        Assert.Null(await originals.FindAsync(Url, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Builds_an_escaped_download_url_for_the_original()
     {
         var withSpace = JsonSerializer.Serialize(new

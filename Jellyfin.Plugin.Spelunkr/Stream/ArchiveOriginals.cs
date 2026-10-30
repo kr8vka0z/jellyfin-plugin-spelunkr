@@ -38,6 +38,9 @@ public sealed class ArchiveOriginals
     // ponytail: entries are refreshed, never evicted; the set is bounded by the films the channels play.
     private readonly ConcurrentDictionary<string, (string? Url, DateTimeOffset Expires)> _cache = new(StringComparer.Ordinal);
 
+    // Kept apart from _cache: a lookup already under way when an original is rejected must not bring it back.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _rejected = new(StringComparer.Ordinal);
+
     /// <summary>Initializes a new instance of the <see cref="ArchiveOriginals"/> class.</summary>
     /// <param name="httpClientFactory">Jellyfin's HTTP client factory.</param>
     /// <param name="logger">Logger.</param>
@@ -66,6 +69,11 @@ public sealed class ArchiveOriginals
             return null;
         }
 
+        if (IsRejected(url))
+        {
+            return null;
+        }
+
         if (_cache.TryGetValue(url, out var hit) && hit.Expires > _time.GetUtcNow())
         {
             return hit.Url;
@@ -90,8 +98,21 @@ public sealed class ArchiveOriginals
         }
 
         _cache[url] = (found, _time.GetUtcNow() + ttl);
-        return found;
+        return IsRejected(url) ? null : found;
     }
+
+    /// <summary>
+    /// Stops offering an original that failed to play, so the next tune-in doesn't lose its time to it. Metadata can't
+    /// predict this: an original with extra data tracks passes every check, then sends nothing at playback speed.
+    /// </summary>
+    /// <param name="url">The derivative URL given to <see cref="FindAsync"/>.</param>
+    public void Reject(string url)
+    {
+        _logger.LogInformation("Spelunkr: the archive.org original for {Url} failed; using Spelunkr's file for now", url);
+        _rejected[url] = _time.GetUtcNow() + FoundTtl;
+    }
+
+    private bool IsRejected(string url) => _rejected.TryGetValue(url, out var until) && until > _time.GetUtcNow();
 
     /// <summary>
     /// The name of the original to play instead of <paramref name="derivativeName"/>, or null. The derivative's own

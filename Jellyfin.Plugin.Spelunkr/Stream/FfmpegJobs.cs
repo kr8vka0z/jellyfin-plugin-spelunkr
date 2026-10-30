@@ -122,6 +122,23 @@ public static class FfmpegJobs
             : jobs.SelectMany(j => new[] { j(true), j(false) }).ToList();
     }
 
+    /// <summary>
+    /// The card that opens a stream: the channel's color, its name and the film that's on, with silence. It starts
+    /// the stream's timeline, so its timestamps begin at 0. The GPU job is followed by its CPU twin.
+    /// </summary>
+    /// <param name="segment">What is on.</param>
+    /// <param name="look">The channel's name and color.</param>
+    /// <param name="durationMs">How long to run.</param>
+    /// <param name="picture">The stream's format; CPU 720p when not given.</param>
+    public static IReadOnlyList<FfmpegJob> TuningIn(Segment segment, ChannelLook look, long durationMs, Picture? picture = null)
+    {
+        var p = picture ?? Picture.Cpu;
+        var text = "TUNING IN\n\n" + look.Name + (segment.Kind == "show" && segment.Title is not null ? "\n\n" + segment.Title : string.Empty);
+        var (filter, files) = Cards([new BumpCard(0, durationMs, text)], look, 0, p);
+        FfmpegJob Job(bool gpu) => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, "-filter_complex", $"{filter}{Upload(gpu)}[v]", "-map", "[v]", "-map", "1:a", .. Encode(p, gpu, durationMs, 0)], files);
+        return p.VaapiDevice is null ? [Job(false)] : [Job(true), Job(false)];
+    }
+
     private static readonly Dictionary<string, string> Empty = [];
 
     // -progress: ffmpeg reports how much it has written (out_time_us) on stderr, so a job that dies part-way can be
