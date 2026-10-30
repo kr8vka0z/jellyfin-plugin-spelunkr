@@ -50,17 +50,17 @@ public class ArchiveOriginalsTests
     }
 
     [Fact]
-    public async Task A_rejected_original_is_not_offered_again()
+    public async Task A_rejected_original_stays_rejected_even_if_a_lookup_was_already_under_way()
     {
-        var metadata = new { files = Array.Empty<object>() }; // unused: the rejection must win without a lookup
-        var fetches = 0;
-        var originals = new ArchiveOriginals((_, _) => { fetches++; return Task.FromResult(System.Text.Json.JsonSerializer.Serialize(metadata)); }, NullLogger.Instance, TimeProvider.System);
-        var url = $"https://archive.org/download/{Item}/film.mp4";
+        var lookup = new TaskCompletionSource<string>();
+        var originals = new ArchiveOriginals((_, _) => lookup.Task, NullLogger.Instance, TimeProvider.System, TimeSpan.FromMinutes(1));
 
-        originals.Reject(url);
+        var underWay = originals.FindAsync(Url, CancellationToken.None);
+        originals.Reject(Url);
+        lookup.SetResult(Metadata(M4v("867.9", "343411932")));
 
-        Assert.Null(await originals.FindAsync(url, CancellationToken.None));
-        Assert.Equal(0, fetches);
+        Assert.Null(await underWay);
+        Assert.Null(await originals.FindAsync(Url, CancellationToken.None));
     }
 
     [Fact]

@@ -40,7 +40,7 @@ continuous TV stream.
    running, a newly published version triggers another refresh.
 2. Tune in: Jellyfin calls the tuner, which picks the stream's format from Jellyfin's encoding settings and opens
    a `ChannelStream`. It asks what is on now, asks archive.org's metadata API for a better original of that file
-   (2.5 s at most, cached), starts ffmpeg at that point in the file, and returns once the first bytes are written. Jellyfin then serves
+   (2.5 s at most, cached), starts ffmpeg at that point in the file. Opening returns once the first bytes are written, which are the tuning-in card's, ahead of both of those steps. Jellyfin then serves
    `/LiveTv/LiveStreamFiles/<id>/stream.ts` (the file) to the player, transcoding if the player needs it.
 3. Each segment ends exactly on schedule (`-t`, with padding if the file runs short); the next one starts where
    the schedule says. Every job in a stream writes the same format (1280x720 on the CPU, or 1920x1080 on a VA-API
@@ -61,7 +61,7 @@ continuous TV stream.
   on by only what was written and asks the schedule again (jumping to now if it fell behind); if nothing at all
   can be written, not even the title card, the stream stops instead of retrying. Remote inputs have a 15 s read timeout, and a job that writes
   nothing for 15 s from its start, or for 45 s once it has written, is killed.
-- **Originals that fail.** Metadata can't catch every bad original, so one that fails during playback goes straight to Spelunkr's file and isn't offered again for 12 hours.
+- **Originals that fail.** This is the one exception to the GPU-then-CPU retry. Metadata can't catch every bad original, so one that fails during playback goes straight to Spelunkr's file and isn't offered again for 12 hours.
 - **Tuning-in card.** A stream opens with a 4 s card (channel color, name, the film that's on), drawn locally so the player gets a picture before the archive answers. It takes the schedule's first 4 s, so the film joins 4 s in and stays on schedule. If it can't be drawn the stream starts without it.
 - **Better source files.** Spelunkr links archive.org's compressed derivative (~1 Mbps). When the item's metadata
   names an original for it that is an MP4-family file (seekable over HTTP), the same length within 1 s (the
@@ -71,8 +71,8 @@ continuous TV stream.
 - **GPU picture follows Jellyfin's own setting.** No plugin settings page: when Jellyfin's hardware acceleration is
   VA-API with hardware encoding on and Jellyfin found Vulkan works on the device, films are lightly denoised on the
   CPU, then upscaled to 1080p with libplacebo (ewa_lanczossharp, debanding) and encoded with h264_vaapi. Bumps,
-  cards and slates are drawn at 1080p (same layout, scaled font) and encoded on the GPU too. Each job runs
-  on the GPU first and, if that fails, as the same piece on the CPU (libx264) at 1080p before the next fallback,
+  cards and slates are drawn at 1080p (same layout, scaled font) and encoded on the GPU too. Each job except an
+  archive.org original runs on the GPU first and, if that fails, as the same piece on the CPU (libx264) at 1080p before the next fallback,
   so a GPU failure costs sharpness, not the film. Other kinds of hardware acceleration (NVENC, QSV...) use the CPU
   path at 720p. The media source declares the stream's real size and codec with probing off: Jellyfin caches a
   probed live stream's details per channel and never refreshes them, so a probed channel kept saying 720p.
