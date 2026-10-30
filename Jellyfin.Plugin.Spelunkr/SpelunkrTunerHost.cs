@@ -192,6 +192,8 @@ public sealed class SpelunkrTunerHost : ITunerHost
     // The stream details are declared, not probed: every job is encoded to the fixed settings in `picture`, and a
     // declared stream (Index 0/1, SupportsProbing off) makes Jellyfin skip its probe. The probe result is cached per
     // channel and never refreshed, so a probed stream kept reporting 720p after a server switched to 1080p.
+    // AnalyzeDurationMs is what Jellyfin's probe used to set: without it Jellyfin's remux/transcode ffmpeg analyzes
+    // 200 s of a stream that arrives in real time, so the picture took minutes to start.
     // RequiresOpening makes Jellyfin call GetChannelStream before playing.
     internal static MediaSourceInfo NewMediaSource(string channelId, Picture picture) => new()
     {
@@ -210,6 +212,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
             new MediaStream { Type = MediaStreamType.Audio, Index = 1, Codec = "aac", Channels = 2, ChannelLayout = "stereo", SampleRate = 48000, BitRate = 128_000 },
         ],
         SupportsProbing = false,
+        AnalyzeDurationMs = 3000,
         RequiresOpening = true,
         RequiresClosing = true,
         IsInfiniteStream = true,

@@ -85,6 +85,8 @@ public partial class PictureTests
         Assert.False(source.SupportsProbing);
         Assert.All(source.MediaStreams, s => Assert.NotEqual(-1, s.Index));
         Assert.Equal((width, height), (video.Width, video.Height));
+        // Unset, Jellyfin's ffmpeg analyzes 200 s of the live stream before the picture starts.
+        Assert.Equal(3000, source.AnalyzeDurationMs);
     }
 
     [Fact]
