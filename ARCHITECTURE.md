@@ -29,7 +29,7 @@ continuous TV stream.
 - **Stream** (`Stream/`): `ChannelStream` runs one ffmpeg per schedule segment and appends the output to a file
   Jellyfin serves to its players. `FfmpegJobs` builds the commands, `StreamPump` walks the schedule, `SegmentPlayer` walks the fallbacks,
   `FfmpegProcess` runs one job and measures what it wrote, `BumpCards` times the bump text, `Pacing` keeps the
-  stream on the wall clock.
+  stream on the wall clock, `ArchiveOriginals` finds a film's better original file on archive.org.
 
 ## Data flow
 
@@ -38,12 +38,14 @@ continuous TV stream.
    a new schedule version while Jellyfin was off. The refresh calls the guide source, which asks SpelunkrSource for
    the next days of segments, reaching past the window's edges so the first and last films are whole. While
    running, a newly published version triggers another refresh.
-2. Tune in: Jellyfin calls the tuner, which opens a `ChannelStream`. It asks what is on now, starts ffmpeg at
-   that point in the archive.org file, and returns once the first bytes are written. Jellyfin then serves
+2. Tune in: Jellyfin calls the tuner, which picks the stream's format from Jellyfin's encoding settings and opens
+   a `ChannelStream`. It asks what is on now, asks archive.org's metadata API for a better original of that file
+   (2.5 s at most, cached), starts ffmpeg at that point in the file, and returns once the first bytes are written. Jellyfin then serves
    `/LiveTv/LiveStreamFiles/<id>/stream.ts` (the file) to the player, transcoding if the player needs it.
 3. Each segment ends exactly on schedule (`-t`, with padding if the file runs short); the next one starts where
-   the schedule says. Every job writes the same format (1280x720, 30 fps, H.264, AAC stereo 48 kHz) with
-   timestamps continued from the previous job (`-output_ts_offset`), so players see one unbroken stream.
+   the schedule says. Every job in a stream writes the same format (1280x720 on the CPU, or 1920x1080 on a VA-API
+   GPU; 30 fps, H.264 High 4.1, a keyframe every 2 s, no B-frames, AAC stereo 48 kHz) with timestamps continued
+   from the previous job (`-output_ts_offset`), so players see one unbroken stream.
 
 ## Key decisions (and why)
 
@@ -59,6 +61,18 @@ continuous TV stream.
   on by only what was written and asks the schedule again (jumping to now if it fell behind); if nothing at all
   can be written, not even the title card, the stream stops instead of retrying. Remote inputs have a 15 s read timeout, and a job that writes
   nothing for 45 s is killed.
+- **Better source files.** Spelunkr links archive.org's compressed derivative (~1 Mbps). When the item's metadata
+  names an original for it that is an MP4-family file (seekable over HTTP), the same length within 1 s (the
+  schedule seeks by time), and under 8 Mbps (streams smoothly at playback speed), that original is tried first
+  with Spelunkr's file behind it. Lookups wait 2.5 s at most so tune-in isn't held up; results are cached 12 h,
+  failures 10 min.
+- **GPU picture follows Jellyfin's own setting.** No plugin settings page: when Jellyfin's hardware acceleration is
+  VA-API with hardware encoding on and Jellyfin found Vulkan works on the device, films are lightly denoised on the
+  CPU, then upscaled to 1080p with libplacebo (ewa_lanczossharp, debanding) and encoded with h264_vaapi. Bumps,
+  cards and slates are drawn at 1080p (same layout, scaled font) and encoded on the GPU too. Every job is tried
+  on the GPU first and then again on the CPU (libx264) at 1080p, so a GPU failure costs sharpness, not the
+  channel. Other kinds of hardware acceleration (NVENC, QSV...) use the CPU path at 720p. The media source
+  Jellyfin sees declares no resolution (it probes the stream), so nothing there depends on the mode.
 - **Pacing:** ffmpeg reads at playback speed after a 10-second head start; the stream may run up to 30 s ahead of
   the clock and skips forward if it falls more than 15 s behind.
 

@@ -35,10 +35,15 @@ config folder, and restart Jellyfin.
   the channel's color; the site's pixel-art animations aren't included.
 - A guide listing each film or show from when it starts until the next one starts, with its poster from the
   Internet Archive and, where Spelunkr wrote one, a description with director and cast.
-- The picture is always 1280x720; older 4:3 films have black bars at the sides.
+- A sharper picture than the site's own: where the Internet Archive has a better-quality original of a film,
+  the plugin plays that instead of the compressed copy. Older 4:3 films keep their black bars at the sides; nothing
+  is stretched.
+- If your Jellyfin uses a graphics card through VA-API (Dashboard → Playback → Transcoding → Hardware acceleration),
+  channels play at 1920x1080: films are cleaned up and enlarged on the graphics card. Otherwise they play at
+  1280x720. There is nothing to set in the plugin; it follows that Jellyfin setting.
 
-Your Jellyfin server does the video work: it converts each film as it plays, which keeps part of one CPU core busy
-while someone is watching.
+Your Jellyfin server does the video work: it converts each film as it plays. Without a graphics card that keeps
+about one CPU core busy while someone is watching; with VA-API most of the work moves to the graphics card.
 
 ## Not affiliated
 
