@@ -200,7 +200,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
         Id = channelId,
         Path = string.Empty,
         Protocol = MediaProtocol.Http,
-        Container = "mpegts",
+        Container = "ts", // Jellyfin matches "ts" exactly (e.g. to add aac_adtstoasc when remuxing to HLS); "mpegts" broke web playback
         MediaStreams =
         [
             new MediaStream

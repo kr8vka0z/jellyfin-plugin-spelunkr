@@ -87,6 +87,8 @@ public partial class PictureTests
         Assert.Equal((width, height), (video.Width, video.Height));
         // Unset, Jellyfin's ffmpeg analyzes 200 s of the live stream before the picture starts.
         Assert.Equal(3000, source.AnalyzeDurationMs);
+        // Jellyfin compares the container to "ts" to fix the AAC headers for HLS; anything else breaks web playback.
+        Assert.Equal("ts", source.Container);
     }
 
     [Fact]
