@@ -21,6 +21,7 @@ internal sealed class ChannelStream : ILiveStream
 
     private readonly string _channelId;
     private readonly ChannelLook _look;
+    private readonly Picture _picture;
     private readonly SpelunkrSource _source;
     private readonly ArchiveOriginals _originals;
     private readonly string _ffmpegPath;
@@ -32,10 +33,11 @@ internal sealed class ChannelStream : ILiveStream
     private Task? _pump;
     private DateTime _openedUtc;
 
-    public ChannelStream(string channelId, ChannelLook look, MediaSourceInfo mediaSource, string tunerHostId, SpelunkrSource source, ArchiveOriginals originals, string ffmpegPath, string streamsDir, IServerApplicationHost appHost, ILogger logger)
+    public ChannelStream(string channelId, ChannelLook look, Picture picture, MediaSourceInfo mediaSource, string tunerHostId, SpelunkrSource source, ArchiveOriginals originals, string ffmpegPath, string streamsDir, IServerApplicationHost appHost, ILogger logger)
     {
         _channelId = channelId;
         _look = look;
+        _picture = picture;
         _source = source;
         _originals = originals;
         _ffmpegPath = ffmpegPath;
@@ -121,7 +123,8 @@ internal sealed class ChannelStream : ILiveStream
                         (job, c2) => FfmpegProcess.RunAsync(_ffmpegPath, job, _workDir, output, () => started.TrySetResult(), StallTimeout, _logger, c2),
                         _logger,
                         c,
-                        segment.Url is null ? null : await _originals.FindAsync(segment.Url, c).ConfigureAwait(false)).ConfigureAwait(false),
+                        segment.Url is null ? null : await _originals.FindAsync(segment.Url, c).ConfigureAwait(false),
+                        _picture).ConfigureAwait(false),
                     Task.Delay,
                     ct).ConfigureAwait(false);
             }

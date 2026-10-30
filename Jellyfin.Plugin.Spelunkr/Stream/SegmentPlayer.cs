@@ -17,13 +17,13 @@ internal static class SegmentPlayer
     /// less than asked only when every fallback failed; StreamPump then carries on from what was written.
     /// </summary>
     /// <remarks><paramref name="originalUrl"/> is looked up once by the caller, never per job: see <see cref="FfmpegJobs.For"/>.</remarks>
-    public static async Task<long> PlayAsync(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS, Func<FfmpegJob, CancellationToken, Task<long>> run, ILogger logger, CancellationToken ct, string? originalUrl = null)
+    public static async Task<long> PlayAsync(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS, Func<FfmpegJob, CancellationToken, Task<long>> run, ILogger logger, CancellationToken ct, string? originalUrl = null, Picture? picture = null)
     {
         var done = 0L;
         var level = 0;
         while (durationMs - done >= MinJobMs)
         {
-            var jobs = FfmpegJobs.For(segment, look, offsetMs + done, durationMs - done, outputOffsetS + (done / 1000.0), originalUrl);
+            var jobs = FfmpegJobs.For(segment, look, offsetMs + done, durationMs - done, outputOffsetS + (done / 1000.0), originalUrl, picture);
             if (level >= jobs.Count)
             {
                 logger.LogError("Spelunkr: every fallback failed for {Kind} {Id} with {Seconds} s still to play", segment.Kind, segment.Id, (durationMs - done) / 1000);

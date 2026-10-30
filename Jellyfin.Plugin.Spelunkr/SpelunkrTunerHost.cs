@@ -7,6 +7,7 @@ using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.MediaEncoding;
+using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.LiveTv;
@@ -90,7 +91,8 @@ public sealed class SpelunkrTunerHost : ITunerHost
             ?? throw new FileNotFoundException($"Spelunkr channel {id} is not offered");
         var tuner = Registration.FindTuner(_config) ?? throw new FileNotFoundException("Spelunkr tuner is not set up");
 
-        var stream = new ChannelStream(id, new ChannelLook(channel.Name, channel.Color), NewMediaSource(channelId), tuner.Id, _source, _originals, _mediaEncoder.EncoderPath, StreamsDir(_config), _appHost, _logger);
+        var picture = PictureFor(_config.GetEncodingOptions(), _mediaEncoder.IsVaapiDeviceSupportVulkanDrmInterop, _logger);
+        var stream = new ChannelStream(id, new ChannelLook(channel.Name, channel.Color), picture, NewMediaSource(channelId), tuner.Id, _source, _originals, _mediaEncoder.EncoderPath, StreamsDir(_config), _appHost, _logger);
         try
         {
             await stream.Open(cancellationToken).ConfigureAwait(false);
@@ -141,6 +143,37 @@ public sealed class SpelunkrTunerHost : ITunerHost
             logger.LogWarning(ex, "Could not write the logo for Spelunkr channel {Channel}", c.Id);
             return null;
         }
+    }
+
+    /// <summary>
+    /// The stream format, following Jellyfin's own hardware acceleration setting (nothing to set up in the plugin):
+    /// 1080p on the GPU when Jellyfin uses VA-API with hardware encoding on, otherwise 720p on the CPU.
+    /// </summary>
+    /// <remarks>
+    /// The GPU path needs Vulkan on top of VA-API (libplacebo); Jellyfin tests that at startup
+    /// (<paramref name="vulkanInterop"/>), and without it every GPU job would fail and fall back to the CPU at 1080p,
+    /// which is heavier than plain 720p. ponytail: VA-API only (AMD and Intel on Linux); NVENC, QSV and others take
+    /// the CPU path.
+    /// </remarks>
+    internal static Picture PictureFor(EncodingOptions options, bool vulkanInterop, ILogger logger)
+    {
+        if (options.HardwareAccelerationType != HardwareAccelerationType.vaapi)
+        {
+            return Picture.Cpu;
+        }
+
+        var why = !options.EnableHardwareEncoding ? "hardware encoding is switched off"
+            : string.IsNullOrEmpty(options.VaapiDevice) ? "no VA-API device is set"
+            : !vulkanInterop ? "Jellyfin found the VA-API device can't share frames with Vulkan"
+            : null;
+        if (why is null)
+        {
+            return Picture.Gpu(options.VaapiDevice);
+        }
+
+        // Logged so a server set to VA-API that still gets 720p says why in Jellyfin's log.
+        logger.LogInformation("Spelunkr: streaming at 720p on the CPU because {Reason}", why);
+        return Picture.Cpu;
     }
 
     internal static ChannelInfo ToChannelInfo(LineupChannel c, string tunerHostId) => new()

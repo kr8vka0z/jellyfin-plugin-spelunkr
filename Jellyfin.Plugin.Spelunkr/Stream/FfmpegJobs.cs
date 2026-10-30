@@ -14,11 +14,29 @@ public sealed record ChannelLook(string Name, string Color);
 /// <summary>One ffmpeg run: its arguments and the text files (name to content) it reads from its working folder.</summary>
 public sealed record FfmpegJob(IReadOnlyList<string> Args, IReadOnlyDictionary<string, string> TextFiles);
 
+/// <summary>
+/// A stream's one video format: 1280x720 encoded on the CPU, or 1920x1080 upscaled and encoded on a VA-API GPU.
+/// </summary>
+/// <param name="Width">Frame width.</param>
+/// <param name="Height">Frame height.</param>
+/// <param name="MaxRateK">Video bitrate cap, kbit/s.</param>
+/// <param name="VaapiDevice">The GPU's device path from Jellyfin's settings; null for a CPU stream.</param>
+public sealed record Picture(int Width, int Height, int MaxRateK, string? VaapiDevice)
+{
+    // 5000k at 720p: the cap only bites on busy, grainy scenes, which is where old film looked blocky at the old
+    // 3000k, while staying an easy stream for any home network or player. 8000k is the same per-pixel budget at 1080p.
+
+    /// <summary>Gets the CPU format.</summary>
+    public static Picture Cpu { get; } = new(1280, 720, 5000, null);
+
+    /// <summary>The GPU format, on the VA-API device Jellyfin is set to use.</summary>
+    /// <param name="vaapiDevice">Device path from Jellyfin's encoding settings.</param>
+    public static Picture Gpu(string vaapiDevice) => new(1920, 1080, 8000, vaapiDevice);
+}
+
 /// <summary>Builds ffmpeg jobs for segments.</summary>
 public static class FfmpegJobs
 {
-    private const string Video = "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p";
-
     // Pad both tracks past the end of the input, then cut with -t: every job lasts exactly its planned length,
     // even when the file is a little shorter than the manifest says, so the stream never drifts off schedule.
     private const string PadVideo = ",tpad=stop=-1:stop_mode=clone";
@@ -28,6 +46,8 @@ public static class FfmpegJobs
     /// <summary>
     /// The jobs for <paramref name="segment"/>, best first: the real thing, then the real thing with silence
     /// (missing or broken audio), then a plain slate naming what should be on, so the stream never stops.
+    /// A GPU stream runs that whole list on the GPU, then all of it again on the CPU at the same size, so a GPU
+    /// that fails only costs the picture's sharpness, never the channel.
     /// </summary>
     /// <param name="segment">What is on.</param>
     /// <param name="look">The channel's name and color.</param>
@@ -39,10 +59,13 @@ public static class FfmpegJobs
     /// tried first with Spelunkr's own file behind it. Must stay the same for every call about one segment: the
     /// player picks fallbacks by position in this list.
     /// </param>
-    public static IReadOnlyList<FfmpegJob> For(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS, string? originalUrl = null)
+    /// <param name="picture">The stream's format; CPU 720p when not given.</param>
+    public static IReadOnlyList<FfmpegJob> For(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS, string? originalUrl = null, Picture? picture = null)
     {
-        var tail = Tail(durationMs, outputOffsetS);
-        var jobs = new List<FfmpegJob>();
+        var p = picture ?? Picture.Cpu;
+        // Each entry builds one job, for the GPU (true) or the CPU (false).
+        var jobs = new List<Func<bool, FfmpegJob>>();
+        string[] Tail(bool gpu) => Encode(p, gpu, durationMs, outputOffsetS);
         switch (segment.Kind)
         {
             case "show" or "ad" when segment.Url is not null:
@@ -51,12 +74,12 @@ public static class FfmpegJobs
                 List<string> Input(string url) => [.. Net(), "-ss", Seconds(segment.InMs + offsetMs), "-i", url];
                 if (originalUrl is not null)
                 {
-                    jobs.Add(new([.. Head, .. Input(originalUrl), "-map", "0:v:0", "-map", "0:a:0", "-vf", Video + PadVideo, "-af", audio, .. tail], Empty));
+                    jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. Input(originalUrl), "-map", "0:v:0", "-map", "0:a:0", "-vf", Film(p, gpu), "-af", audio, .. Tail(gpu)], Empty));
                 }
 
                 var input = Input(segment.Url);
-                jobs.Add(new([.. Head, .. input, "-map", "0:v:0", "-map", "0:a:0", "-vf", Video + PadVideo, "-af", audio, .. tail], Empty));
-                jobs.Add(new([.. Head, .. input, "-f", "lavfi", "-i", Silence, "-map", "0:v:0", "-map", "1:a", "-vf", Video + PadVideo, .. tail], Empty));
+                jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, "-map", "0:v:0", "-map", "0:a:0", "-vf", Film(p, gpu), "-af", audio, .. Tail(gpu)], Empty));
+                jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, "-f", "lavfi", "-i", Silence, "-map", "0:v:0", "-map", "1:a", "-vf", Film(p, gpu), .. Tail(gpu)], Empty));
                 break;
             }
 
@@ -67,29 +90,34 @@ public static class FfmpegJobs
                 var cards = segment.Kind == "bump"
                     ? BumpCards.For(segment, look)
                     : [new BumpCard(0, segment.LengthMs, $"UP NEXT ON {look.Name}" + (segment.Next is null ? string.Empty : $"\n\n{segment.Next}"))];
-                var (filter, files) = Cards(cards, look, offsetMs);
+                var (filter, files) = Cards(cards, look, offsetMs, p);
                 // ponytail: one track per bump. A "full" bump has a second track for its network half on the site;
                 // here the channel's track plays under both halves.
                 var music = segment.Kind == "up-next" ? segment.Sting
                     : segment.Half == "close" ? segment.Platform?.Audio : segment.Channel?.Audio ?? segment.Platform?.Audio;
                 if (music is not null)
                 {
-                    jobs.Add(new(
-                        [.. Head, .. Color(look), .. Remote, "-ss", Seconds((music.StartOffsetS * 1000) + offsetMs), "-i", music.Url,
-                         "-filter_complex", $"{filter}[v];[1:a]{Audio},apad[a]", "-map", "[v]", "-map", "[a]", .. tail],
+                    jobs.Add(gpu => new(
+                        [.. Head, .. CardDevices(p, gpu), .. Color(look, p), .. Remote, "-ss", Seconds((music.StartOffsetS * 1000) + offsetMs), "-i", music.Url,
+                         "-filter_complex", $"{filter}{Upload(gpu)}[v];[1:a]{Audio},apad[a]", "-map", "[v]", "-map", "[a]", .. Tail(gpu)],
                         files));
                 }
 
-                jobs.Add(new([.. Head, .. Color(look), "-f", "lavfi", "-i", Silence, "-filter_complex", $"{filter}[v]", "-map", "[v]", "-map", "1:a", .. tail], files));
+                jobs.Add(gpu => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, "-filter_complex", $"{filter}{Upload(gpu)}[v]", "-map", "[v]", "-map", "1:a", .. Tail(gpu)], files));
                 break;
             }
         }
 
         // The last resort: the channel color with the title (or channel name) and silence.
         var slateText = segment.Title ?? look.Name;
-        var (slate, slateFiles) = Cards([new BumpCard(offsetMs, offsetMs + durationMs, slateText)], look, offsetMs);
-        jobs.Add(new([.. Head, .. Color(look), "-f", "lavfi", "-i", Silence, "-filter_complex", $"{slate}[v]", "-map", "[v]", "-map", "1:a", .. tail], slateFiles));
-        return jobs;
+        var (slate, slateFiles) = Cards([new BumpCard(offsetMs, offsetMs + durationMs, slateText)], look, offsetMs, p);
+        jobs.Add(gpu => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, "-filter_complex", $"{slate}{Upload(gpu)}[v]", "-map", "[v]", "-map", "1:a", .. Tail(gpu)], slateFiles));
+
+        // ponytail: a GPU that is broken outright fails every GPU job of every segment before the CPU copy runs.
+        // Those failures are immediate (the device won't open), so it costs a moment per segment, not a stall.
+        return p.VaapiDevice is null
+            ? jobs.Select(j => j(false)).ToList()
+            : [.. jobs.Select(j => j(true)), .. jobs.Select(j => j(false))];
     }
 
     private static readonly Dictionary<string, string> Empty = [];
@@ -108,27 +136,55 @@ public static class FfmpegJobs
     // stops sending, instead of waiting forever; reconnect covers dropped connections.
     private static string[] Remote => ["-rw_timeout", "15000000", "-reconnect", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5"];
 
-    private static string[] Color(ChannelLook look) =>
-        [.. Paced, "-f", "lavfi", "-i", $"color=c=0x{look.Color.TrimStart('#')}:s=1280x720:r=30"];
+    private static string[] Color(ChannelLook look, Picture p) =>
+        [.. Paced, "-f", "lavfi", "-i", string.Create(CultureInfo.InvariantCulture, $"color=c=0x{look.Color.TrimStart('#')}:s={p.Width}x{p.Height}:r=30")];
+
+    // Films on the GPU: libplacebo (a Vulkan filter) upscales, so Vulkan is opened on top of the VA-API device and
+    // the frames are handed back to VA-API for the encoder without leaving the GPU.
+    private static string[] FilmDevices(Picture p, bool gpu) => gpu
+        ? ["-init_hw_device", "vaapi=va:" + p.VaapiDevice, "-init_hw_device", "vulkan=vk@va", "-filter_hw_device", "vk"]
+        : [];
+
+    // Cards are drawn on the CPU (drawtext) and only uploaded for the GPU encoder.
+    private static string[] CardDevices(Picture p, bool gpu) => gpu ? ["-init_hw_device", "vaapi=va:" + p.VaapiDevice, "-filter_hw_device", "va"] : [];
+
+    private static string Upload(bool gpu) => gpu ? ",format=nv12,hwupload" : string.Empty;
+
+    /// <summary>The film's video filter: fit inside the frame with black side bars (never stretched), 30 fps.</summary>
+    private static string Film(Picture p, bool gpu) => gpu
+        // A light denoise (hqdn3d, half its default strength) on the small source frame first, so the sharp scaler
+        // doesn't sharpen film grain and compression blocks too; then libplacebo's ewa_lanczossharp upscale with
+        // debanding (smooths the stepped gradients of the old ~1 Mbps encodes). Measured ~8x real time on a home GPU.
+        ? string.Create(CultureInfo.InvariantCulture, $"hqdn3d=2:1.5:3:2.25,fps=30{PadVideo},format=yuv420p,hwupload,libplacebo=w={p.Width}:h={p.Height}:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12,hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1")
+        : string.Create(CultureInfo.InvariantCulture, $"scale={p.Width}:{p.Height}:force_original_aspect_ratio=decrease,pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p{PadVideo}");
 
     // No B-frames (-bf 0): with them each job's first video timestamps start slightly before the previous job's
     // last ones, which players see as time going backwards at every join.
     // ponytail: the audio still overlaps by ~40 ms at each join (AAC encoder priming); players drop the extra
     // packets. A single long-running encoder fed by per-segment decoders would remove that, at more complexity.
-    // The cap only bites on busy, grainy scenes, which is where old film looked blocky at 3000k; 5000k (with a
-    // matching 2x buffer) removes most of that while staying an easy stream for any home network or player.
-    private static string[] Tail(long durationMs, double outputOffsetS) =>
+    // Profile, level and a keyframe every 60 frames are pinned on both encoders: a GPU stream mixes GPU jobs with
+    // CPU fallbacks, and players expect those to stay the same mid-stream. (h264_vaapi makes every keyframe a fresh
+    // start point, as libx264 does with these settings.)
+    private static string[] Encode(Picture p, bool gpu, long durationMs, double outputOffsetS) =>
     [
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", "5000k", "-bufsize", "10000k",
-        "-g", "60", "-keyint_min", "60", "-sc_threshold", "0", "-bf", "0",
+        .. gpu
+            ? (string[])["-c:v", "h264_vaapi", "-profile:v", "high", "-level:v", "4.1", "-rc_mode", "VBR", "-b:v", "6000k"]
+            : ["-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", "-level:v", "4.1", "-crf", "23"],
+        "-maxrate", Kbps(p.MaxRateK), "-bufsize", Kbps(p.MaxRateK * 2),
+        .. gpu ? (string[])["-g", "60", "-bf", "0"] : ["-g", "60", "-keyint_min", "60", "-sc_threshold", "0", "-bf", "0"],
         "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000",
         "-t", Seconds(durationMs), "-output_ts_offset", outputOffsetS.ToString("0.000", CultureInfo.InvariantCulture),
         "-f", "mpegts", "pipe:1",
     ];
 
+    private static string Kbps(int k) => k.ToString(CultureInfo.InvariantCulture) + "k";
+
     /// <summary>drawtext filters for the cards, timed relative to the job start (the segment start + offset).</summary>
-    private static (string Filter, Dictionary<string, string> Files) Cards(IReadOnlyList<BumpCard> cards, ChannelLook look, long offsetMs)
+    private static (string Filter, Dictionary<string, string> Files) Cards(IReadOnlyList<BumpCard> cards, ChannelLook look, long offsetMs, Picture p)
     {
+        // Sizes are set for a 720-line frame and scaled with it, so a card looks the same at 1080p (and wraps the same).
+        var fontSize = 48 * p.Height / 720;
+        var lineSpacing = 14 * p.Height / 720;
         var files = new Dictionary<string, string>();
         var parts = new List<string> { "[0:v]format=yuv420p" };
         foreach (var card in cards.Where(c => c.EndMs > offsetMs))
@@ -139,7 +195,7 @@ public static class FfmpegJobs
             files[name] = Wrap(card.Text);
             parts.Add(string.Create(
                 CultureInfo.InvariantCulture,
-                $"drawtext=textfile={name}:expansion=none:fontcolor={TextColor(look.Color)}:fontsize=48:line_spacing=14:text_align=C:x=(w-tw)/2:y=(h-th)/2:enable='gte(t,{(card.StartMs - offsetMs) / 1000.0:0.000})*lt(t,{(card.EndMs - offsetMs) / 1000.0:0.000})'"));
+                $"drawtext=textfile={name}:expansion=none:fontcolor={TextColor(look.Color)}:fontsize={fontSize}:line_spacing={lineSpacing}:text_align=C:x=(w-tw)/2:y=(h-th)/2:enable='gte(t,{(card.StartMs - offsetMs) / 1000.0:0.000})*lt(t,{(card.EndMs - offsetMs) / 1000.0:0.000})'"));
         }
 
         return (string.Join(",", parts), files);
@@ -153,7 +209,7 @@ public static class FfmpegJobs
         return luma > 140 ? "0x1A1A1A" : "0xF5F5F5";
     }
 
-    /// <summary>Breaks text into lines of about 34 characters so a 48 px line fits a 1280 px frame.</summary>
+    /// <summary>Breaks text into lines of about 34 characters so a line fits the frame (the font scales with it).</summary>
     private static string Wrap(string text) => string.Join('\n', text.Split('\n').Select(WrapLine));
 
     private static string WrapLine(string text)
