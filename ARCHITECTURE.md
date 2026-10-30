@@ -69,10 +69,11 @@ continuous TV stream.
 - **GPU picture follows Jellyfin's own setting.** No plugin settings page: when Jellyfin's hardware acceleration is
   VA-API with hardware encoding on and Jellyfin found Vulkan works on the device, films are lightly denoised on the
   CPU, then upscaled to 1080p with libplacebo (ewa_lanczossharp, debanding) and encoded with h264_vaapi. Bumps,
-  cards and slates are drawn at 1080p (same layout, scaled font) and encoded on the GPU too. Every job is tried
-  on the GPU first and then again on the CPU (libx264) at 1080p, so a GPU failure costs sharpness, not the
-  channel. Other kinds of hardware acceleration (NVENC, QSV...) use the CPU path at 720p. The media source
-  Jellyfin sees declares no resolution (it probes the stream), so nothing there depends on the mode.
+  cards and slates are drawn at 1080p (same layout, scaled font) and encoded on the GPU too. Each job runs
+  on the GPU first and, if that fails, as the same piece on the CPU (libx264) at 1080p before the next fallback,
+  so a GPU failure costs sharpness, not the film. Other kinds of hardware acceleration (NVENC, QSV...) use the CPU
+  path at 720p. The media source declares the stream's real size and codec with probing off: Jellyfin caches a
+  probed live stream's details per channel and never refreshes them, so a probed channel kept saying 720p.
 - **Pacing:** ffmpeg reads at playback speed after a 10-second head start; the stream may run up to 30 s ahead of
   the clock and skips forward if it falls more than 15 s behind.
 

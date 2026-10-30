@@ -54,25 +54,37 @@ public partial class PictureTests
     }
 
     [Fact]
-    public void Gpu_streams_try_every_job_on_the_gpu_then_redo_it_on_the_cpu_at_the_same_size()
+    public void Gpu_streams_follow_every_gpu_job_with_its_cpu_twin_at_the_same_size()
     {
         foreach (var jobs in EveryKind(Picture.Gpu(Device)))
         {
-            var half = jobs.Count / 2;
-            Assert.Equal(jobs.Count, half * 2);
-            for (var i = 0; i < half; i++)
+            Assert.Equal(0, jobs.Count % 2);
+            for (var i = 0; i < jobs.Count; i += 2)
             {
-                var (gpu, cpu) = (jobs[i].Args, jobs[half + i].Args);
+                var (gpu, cpu) = (jobs[i].Args, jobs[i + 1].Args);
                 Assert.Equal("h264_vaapi", Arg(gpu, "-c:v"));
                 Assert.Equal("vaapi=va:" + Device, Arg(gpu, "-init_hw_device"));
                 Assert.Equal("libx264", Arg(cpu, "-c:v"));
                 Assert.DoesNotContain("-init_hw_device", cpu);
                 // The CPU twin is the same piece: same inputs, same text, same slot in the stream.
                 Assert.Equal(Inputs(gpu), Inputs(cpu));
-                Assert.Equal(jobs[i].TextFiles, jobs[half + i].TextFiles);
+                Assert.Equal(jobs[i].TextFiles, jobs[i + 1].TextFiles);
                 Assert.Equal(Arg(gpu, "-output_ts_offset"), Arg(cpu, "-output_ts_offset"));
             }
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void The_stream_is_declared_at_its_real_size_so_jellyfin_never_probes_or_caches_it(string mode, int width, int height)
+    {
+        var source = SpelunkrTunerHost.NewMediaSource("spelunkr_x", mode == "gpu" ? Picture.Gpu(Device) : Picture.Cpu);
+        var video = source.MediaStreams.Single(s => s.Type == MediaStreamType.Video);
+
+        // Jellyfin probes (and caches the result forever) unless probing is off or a stream has a real index.
+        Assert.False(source.SupportsProbing);
+        Assert.All(source.MediaStreams, s => Assert.NotEqual(-1, s.Index));
+        Assert.Equal((width, height), (video.Width, video.Height));
     }
 
     [Fact]

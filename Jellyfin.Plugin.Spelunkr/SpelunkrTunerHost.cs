@@ -13,6 +13,7 @@ using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.LiveTv;
 using MediaBrowser.Model.MediaInfo;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Jellyfin.Plugin.Spelunkr;
 
@@ -75,7 +76,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
 
     /// <inheritdoc />
     public Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(string channelId, CancellationToken cancellationToken)
-        => Task.FromResult(channelId.StartsWith(ChannelIdPrefix, StringComparison.Ordinal) ? [NewMediaSource(channelId)] : new List<MediaSourceInfo>());
+        => Task.FromResult(channelId.StartsWith(ChannelIdPrefix, StringComparison.Ordinal) ? [NewMediaSource(channelId, CurrentPicture(NullLogger.Instance))] : new List<MediaSourceInfo>());
 
     /// <inheritdoc />
     public async Task<ILiveStream> GetChannelStream(string channelId, string streamId, IList<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
@@ -91,8 +92,8 @@ public sealed class SpelunkrTunerHost : ITunerHost
             ?? throw new FileNotFoundException($"Spelunkr channel {id} is not offered");
         var tuner = Registration.FindTuner(_config) ?? throw new FileNotFoundException("Spelunkr tuner is not set up");
 
-        var picture = PictureFor(_config.GetEncodingOptions(), _mediaEncoder.IsVaapiDeviceSupportVulkanDrmInterop, _logger);
-        var stream = new ChannelStream(id, new ChannelLook(channel.Name, channel.Color), picture, NewMediaSource(channelId), tuner.Id, _source, _originals, _mediaEncoder.EncoderPath, StreamsDir(_config), _appHost, _logger);
+        var picture = CurrentPicture(_logger);
+        var stream = new ChannelStream(id, new ChannelLook(channel.Name, channel.Color), picture, NewMediaSource(channelId, picture), tuner.Id, _source, _originals, _mediaEncoder.EncoderPath, StreamsDir(_config), _appHost, _logger);
         try
         {
             await stream.Open(cancellationToken).ConfigureAwait(false);
@@ -176,6 +177,8 @@ public sealed class SpelunkrTunerHost : ITunerHost
         return Picture.Cpu;
     }
 
+    private Picture CurrentPicture(ILogger logger) => PictureFor(_config.GetEncodingOptions(), _mediaEncoder.IsVaapiDeviceSupportVulkanDrmInterop, logger);
+
     internal static ChannelInfo ToChannelInfo(LineupChannel c, string tunerHostId) => new()
     {
         Id = ChannelIdPrefix + c.Id,
@@ -186,18 +189,27 @@ public sealed class SpelunkrTunerHost : ITunerHost
         TunerHostId = tunerHostId,
     };
 
-    // Shaped like Jellyfin's own M3U tuner: stream details unknown (Index -1), so Jellyfin probes the stream
-    // once it is open. RequiresOpening makes Jellyfin call GetChannelStream before playing.
-    private static MediaSourceInfo NewMediaSource(string channelId) => new()
+    // The stream details are declared, not probed: every job is encoded to the fixed settings in `picture`, and a
+    // declared stream (Index 0/1, SupportsProbing off) makes Jellyfin skip its probe. The probe result is cached per
+    // channel and never refreshed, so a probed stream kept reporting 720p after a server switched to 1080p.
+    // RequiresOpening makes Jellyfin call GetChannelStream before playing.
+    internal static MediaSourceInfo NewMediaSource(string channelId, Picture picture) => new()
     {
         Id = channelId,
         Path = string.Empty,
         Protocol = MediaProtocol.Http,
+        Container = "mpegts",
         MediaStreams =
         [
-            new MediaStream { Type = MediaStreamType.Video, Index = -1, IsInterlaced = false },
-            new MediaStream { Type = MediaStreamType.Audio, Index = -1 },
+            new MediaStream
+            {
+                Type = MediaStreamType.Video, Index = 0, Codec = "h264", Profile = "High", Level = 41, PixelFormat = "yuv420p",
+                Width = picture.Width, Height = picture.Height, AverageFrameRate = 30, RealFrameRate = 30, AspectRatio = "16:9",
+                BitRate = picture.MaxRateK * 1000, IsInterlaced = false,
+            },
+            new MediaStream { Type = MediaStreamType.Audio, Index = 1, Codec = "aac", Channels = 2, ChannelLayout = "stereo", SampleRate = 48000, BitRate = 128_000 },
         ],
+        SupportsProbing = false,
         RequiresOpening = true,
         RequiresClosing = true,
         IsInfiniteStream = true,

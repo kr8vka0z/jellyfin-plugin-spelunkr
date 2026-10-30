@@ -113,11 +113,13 @@ public static class FfmpegJobs
         var (slate, slateFiles) = Cards([new BumpCard(offsetMs, offsetMs + durationMs, slateText)], look, offsetMs, p);
         jobs.Add(gpu => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, "-filter_complex", $"{slate}{Upload(gpu)}[v]", "-map", "[v]", "-map", "1:a", .. Tail(gpu)], slateFiles));
 
-        // ponytail: a GPU that is broken outright fails every GPU job of every segment before the CPU copy runs.
-        // Those failures are immediate (the device won't open), so it costs a moment per segment, not a stall.
+        // On the GPU each job is followed by its CPU twin, so a failed GPU film is retried as the same film on the CPU
+        // before anything further down the list (a GPU title slate would otherwise fill the rest of the film).
+        // ponytail: a GPU that is broken outright fails each segment's first GPU job before its CPU twin runs.
+        // That failure is immediate (the device won't open), so it costs a moment per segment, not a stall.
         return p.VaapiDevice is null
             ? jobs.Select(j => j(false)).ToList()
-            : [.. jobs.Select(j => j(true)), .. jobs.Select(j => j(false))];
+            : jobs.SelectMany(j => new[] { j(true), j(false) }).ToList();
     }
 
     private static readonly Dictionary<string, string> Empty = [];
