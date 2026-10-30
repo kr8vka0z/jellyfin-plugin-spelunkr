@@ -104,9 +104,11 @@ public static class FfmpegJobs
     // last ones, which players see as time going backwards at every join.
     // ponytail: the audio still overlaps by ~40 ms at each join (AAC encoder priming); players drop the extra
     // packets. A single long-running encoder fed by per-segment decoders would remove that, at more complexity.
+    // The cap only bites on busy, grainy scenes, which is where old film looked blocky at 3000k; 5000k (with a
+    // matching 2x buffer) removes most of that while staying an easy stream for any home network or player.
     private static string[] Tail(long durationMs, double outputOffsetS) =>
     [
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", "3000k", "-bufsize", "6000k",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", "5000k", "-bufsize", "10000k",
         "-g", "60", "-keyint_min", "60", "-sc_threshold", "0", "-bf", "0",
         "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000",
         "-t", Seconds(durationMs), "-output_ts_offset", outputOffsetS.ToString("0.000", CultureInfo.InvariantCulture),
