@@ -124,6 +124,44 @@ public class SegmentPlaybackTests
     }
 
     [Fact]
+    public async Task A_dead_original_goes_straight_to_spelunkrs_file_and_is_reported()
+    {
+        const string original = "https://archive.org/download/x/original.mp4";
+        var urls = new List<string>();
+        var failures = 0;
+
+        var emitted = await SegmentPlayer.PlayAsync(Film, Look, 0, 60_000, 0, (job, _) =>
+        {
+            urls.Add(job.Args[job.Args.ToList().IndexOf("-i") + 1]);
+            return Task.FromResult(urls.Count == 1 ? 0L : 60_000L);
+        }, NullLogger.Instance, CancellationToken.None, original, Picture.Gpu("/dev/dri/renderD128"), () => failures++);
+
+        Assert.Equal(60_000, emitted);
+        Assert.Equal([original, Film.Url!], urls); // not the original again on the CPU
+        Assert.Equal(1, failures);
+    }
+
+    [Fact]
+    public async Task A_gpu_tuning_in_card_that_fails_is_drawn_on_the_cpu_and_touches_no_network()
+    {
+        var jobs = new List<FfmpegJob>();
+
+        var emitted = await SegmentPlayer.PlayTuningInAsync(Film, Look, 60_000, (job, _) =>
+        {
+            jobs.Add(job);
+            return Task.FromResult(jobs.Count == 1 ? 0L : 4_000L);
+        }, CancellationToken.None, Picture.Gpu("/dev/dri/renderD128"));
+
+        Assert.Equal(4_000, emitted);
+        Assert.Equal(2, jobs.Count);
+        Assert.Contains("h264_vaapi", jobs[0].Args);
+        Assert.Contains("libx264", jobs[1].Args);
+        Assert.All(jobs, j => Assert.DoesNotContain(j.Args, a => a.Contains("http", StringComparison.Ordinal)));
+        Assert.Contains(Film.Title!, jobs[0].TextFiles.Values.Single());
+        Assert.Equal("4.000", jobs[0].Args[jobs[0].Args.ToList().IndexOf("-t") + 1]);
+    }
+
+    [Fact]
     public void Every_remote_input_has_a_read_timeout()
     {
         var bump = StreamPlanTests.OpenBump();

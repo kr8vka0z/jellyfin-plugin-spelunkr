@@ -94,6 +94,17 @@ public sealed class ArchiveOriginals
     }
 
     /// <summary>
+    /// Stops offering an original that failed to play, so the next tune-in doesn't lose its time to it. Metadata can't
+    /// predict this: an original with extra data tracks passes every check, then sends nothing at playback speed.
+    /// </summary>
+    /// <param name="url">The derivative URL given to <see cref="FindAsync"/>.</param>
+    public void Reject(string url)
+    {
+        _logger.LogInformation("Spelunkr: the archive.org original for {Url} failed; using Spelunkr's file for now", url);
+        _cache[url] = (null, _time.GetUtcNow() + FoundTtl);
+    }
+
+    /// <summary>
     /// The name of the original to play instead of <paramref name="derivativeName"/>, or null. The derivative's own
     /// "original" field names it; it must be a seekable video of the same length and a streamable bitrate.
     /// </summary>

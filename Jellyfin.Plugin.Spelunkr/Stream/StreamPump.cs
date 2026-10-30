@@ -15,6 +15,10 @@ internal static class StreamPump
     /// <param name="wallMs">The real clock, Unix ms.</param>
     /// <param name="segmentAt">What is on at a schedule time.</param>
     /// <param name="play">Plays (segment, offsetMs, durationMs, outputOffsetS) and returns the ms written.</param>
+    /// <param name="tuneIn">
+    /// Plays the tuning-in card at the very start (segment, durationMs) and returns the ms written; 0 if it couldn't.
+    /// The card stands in for the first moments of the schedule, so what follows starts that much later on both clocks.
+    /// </param>
     /// <param name="delay">Waits (Task.Delay in production).</param>
     /// <param name="ct">Stops the loop.</param>
     public static async Task RunAsync(
@@ -22,6 +26,7 @@ internal static class StreamPump
         Func<long> wallMs,
         Func<long, CancellationToken, Task<Segment>> segmentAt,
         Func<Segment, long, long, double, CancellationToken, Task<long>> play,
+        Func<Segment, long, CancellationToken, Task<long>> tuneIn,
         Func<TimeSpan, CancellationToken, Task> delay,
         CancellationToken ct)
     {
@@ -30,6 +35,7 @@ internal static class StreamPump
         // contentMs to now on the next turn while outputS keeps counting, so there is no gap in the timestamps.
         var contentMs = startMs;
         var outputS = 0.0;
+        var tunedIn = false;
         while (!ct.IsCancellationRequested)
         {
             (contentMs, var waitMs) = Pacing.Next(contentMs, wallMs());
@@ -47,7 +53,13 @@ internal static class StreamPump
                 continue;
             }
 
-            var emittedMs = await play(segment, contentMs - segment.StartMs, durationMs, outputS, ct).ConfigureAwait(false);
+            var emittedMs = tunedIn ? 0 : await tuneIn(segment, durationMs, ct).ConfigureAwait(false);
+            tunedIn = true;
+            if (emittedMs <= 0)
+            {
+                emittedMs = await play(segment, contentMs - segment.StartMs, durationMs, outputS, ct).ConfigureAwait(false);
+            }
+
             if (emittedMs <= 0)
             {
                 throw new IOException($"nothing could be played for {segment.Kind} {segment.Title ?? segment.Id}, not even the title slate");

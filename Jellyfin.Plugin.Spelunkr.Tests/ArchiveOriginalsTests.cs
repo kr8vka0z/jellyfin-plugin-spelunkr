@@ -50,6 +50,20 @@ public class ArchiveOriginalsTests
     }
 
     [Fact]
+    public async Task A_rejected_original_is_not_offered_again()
+    {
+        var metadata = new { files = Array.Empty<object>() }; // unused: the rejection must win without a lookup
+        var fetches = 0;
+        var originals = new ArchiveOriginals((_, _) => { fetches++; return Task.FromResult(System.Text.Json.JsonSerializer.Serialize(metadata)); }, NullLogger.Instance, TimeProvider.System);
+        var url = $"https://archive.org/download/{Item}/film.mp4";
+
+        originals.Reject(url);
+
+        Assert.Null(await originals.FindAsync(url, CancellationToken.None));
+        Assert.Equal(0, fetches);
+    }
+
+    [Fact]
     public async Task Builds_an_escaped_download_url_for_the_original()
     {
         var withSpace = JsonSerializer.Serialize(new
