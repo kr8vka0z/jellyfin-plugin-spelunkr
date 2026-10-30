@@ -12,9 +12,11 @@ internal static class FfmpegProcess
     /// <summary>
     /// Runs <paramref name="job"/> in <paramref name="workDir"/>, appending stdout to <paramref name="output"/>.
     /// Returns the ms of media emitted. A job that writes nothing for <paramref name="stallTimeout"/> is killed:
-    /// ffmpeg's own network timeout covers most stalls, this catches the rest.
+    /// ffmpeg's own network timeout covers most stalls, this catches the rest. <paramref name="connectTimeout"/>
+    /// replaces it until the first bytes: a job normally starts in seconds, and with nothing written yet a viewer may
+    /// be waiting on this job while ffmpeg's timeout and reconnects stack up.
     /// </summary>
-    public static async Task<long> RunAsync(string exe, FfmpegJob job, string workDir, System.IO.Stream output, Action onBytes, TimeSpan stallTimeout, ILogger logger, CancellationToken ct)
+    public static async Task<long> RunAsync(string exe, FfmpegJob job, string workDir, System.IO.Stream output, Action onBytes, TimeSpan connectTimeout, TimeSpan stallTimeout, ILogger logger, CancellationToken ct)
     {
         foreach (var (name, text) in job.TextFiles)
         {
@@ -60,10 +62,11 @@ internal static class FfmpegProcess
         {
             var buffer = new byte[81920];
             var stdout = process.StandardOutput.BaseStream;
+            var timeout = connectTimeout;
             while (true)
             {
                 using var read = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                read.CancelAfter(stallTimeout);
+                read.CancelAfter(timeout);
                 int n;
                 try
                 {
@@ -71,7 +74,7 @@ internal static class FfmpegProcess
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
-                    logger.LogWarning("Spelunkr: ffmpeg sent nothing for {Seconds} s; stopping it", stallTimeout.TotalSeconds);
+                    logger.LogWarning("Spelunkr: ffmpeg sent nothing for {Seconds} s; stopping it", timeout.TotalSeconds);
                     break;
                 }
 
@@ -84,6 +87,7 @@ internal static class FfmpegProcess
                 // Flush every chunk: Jellyfin reads the file while it grows.
                 await output.FlushAsync(ct).ConfigureAwait(false);
                 onBytes();
+                timeout = stallTimeout;
             }
         }
         finally

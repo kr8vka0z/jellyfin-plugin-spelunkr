@@ -34,6 +34,7 @@ public sealed partial class SpelunkrSource
     private readonly ConcurrentDictionary<(string Channel, int Version), IReadOnlyList<ItemDetails>> _details = new();
     private Lineup? _lineup;
     private DateTimeOffset _nextRefreshUtc;
+    private Task _backgroundRefresh = Task.CompletedTask;
 
     /// <summary>Initializes a new instance of the <see cref="SpelunkrSource"/> class.</summary>
     /// <param name="httpClientFactory">Jellyfin's HTTP client factory.</param>
@@ -79,11 +80,24 @@ public sealed partial class SpelunkrSource
 
     private async Task<Lineup> GetLineupAsync(CancellationToken cancellationToken)
     {
-        if (_lineup is not null && _time.GetUtcNow() < _nextRefreshUtc)
+        if (_lineup is null)
         {
-            return _lineup;
+            return await RefreshLineupAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        // A stale lineup is refreshed behind the caller: a channel opening here must not wait for a batch of new
+        // schedule files (14 s for 48 of them), and what is on now is in the copy we have. Two callers can both
+        // start one; the second finds the lineup fresh under _refresh and does nothing.
+        if (_time.GetUtcNow() >= _nextRefreshUtc && _backgroundRefresh.IsCompleted)
+        {
+            _backgroundRefresh = Task.Run(() => RefreshLineupAsync(CancellationToken.None), CancellationToken.None);
+        }
+
+        return _lineup;
+    }
+
+    private async Task<Lineup> RefreshLineupAsync(CancellationToken cancellationToken)
+    {
         await _refresh.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

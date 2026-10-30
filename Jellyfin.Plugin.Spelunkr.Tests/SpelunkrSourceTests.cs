@@ -87,12 +87,41 @@ public class SpelunkrSourceTests
 
         published = true;
         clock.Now += TimeSpan.FromMinutes(61);
+        await source.SegmentAtAsync("gumshoe", takeover + 60_000, CancellationToken.None); // starts the background refresh
+        for (var i = 0; i < 500 && guideRefreshes == 0; i++)
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+
         var after = await source.SegmentAtAsync("gumshoe", takeover + 60_000, CancellationToken.None);
         var before = await source.SegmentAtAsync("gumshoe", takeover - 60_000, CancellationToken.None);
 
         Assert.Equal(20, after.Version);
         Assert.Equal(19, before.Version);
         Assert.Equal(1, guideRefreshes);
+    }
+
+    [Fact]
+    public async Task A_schedule_refresh_never_makes_a_channel_wait()
+    {
+        var clock = new Clock(DateTimeOffset.FromUnixTimeMilliseconds(1_793_000_000_000));
+        var slowLineup = new TaskCompletionSource<string>();
+        var loaded = false;
+        var source = new SpelunkrSource(
+            (path, _) => loaded && path == "lineup.json" ? slowLineup.Task : Task.FromResult(File.ReadAllText(Path.Combine(ScheduleEngineTests.FixtureDir, path))),
+            NullLogger<SpelunkrSource>.Instance,
+            () => { },
+            clock);
+        await source.GetChannelsAsync(CancellationToken.None);
+        loaded = true;
+        clock.Now += TimeSpan.FromMinutes(61);
+
+        // The refresh is stuck on slowLineup, and the answer still comes from the copy already loaded.
+        var channels = await source.GetChannelsAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await source.SegmentAtAsync("gumshoe", 1_793_000_000_000, CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.NotEmpty(channels);
+        slowLineup.SetResult(await File.ReadAllTextAsync(Path.Combine(ScheduleEngineTests.FixtureDir, "lineup.json"), TestContext.Current.CancellationToken));
     }
 
     [Theory]

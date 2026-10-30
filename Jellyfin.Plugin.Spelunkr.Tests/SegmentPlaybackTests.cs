@@ -76,7 +76,7 @@ public class SegmentPlaybackTests
         using var output = new MemoryStream();
         var job = new FfmpegJob(["-c", "echo out_time_us=1500000 >&2; printf abc; echo out_time_us=2500000 >&2"], new Dictionary<string, string>());
 
-        var emitted = await FfmpegProcess.RunAsync("/bin/sh", job, dir.Path, output, () => { }, TimeSpan.FromSeconds(10), NullLogger.Instance, CancellationToken.None);
+        var emitted = await FfmpegProcess.RunAsync("/bin/sh", job, dir.Path, output, () => { }, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10), NullLogger.Instance, CancellationToken.None);
 
         Assert.Equal(2_500, emitted);
         Assert.Equal("abc"u8.ToArray(), output.ToArray());
@@ -90,10 +90,37 @@ public class SegmentPlaybackTests
         var job = new FfmpegJob(["-c", "echo out_time_us=1000000 >&2; printf x; sleep 30"], new Dictionary<string, string>());
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
-        var emitted = await FfmpegProcess.RunAsync("/bin/sh", job, dir.Path, output, () => { }, TimeSpan.FromSeconds(1), NullLogger.Instance, CancellationToken.None);
+        var emitted = await FfmpegProcess.RunAsync("/bin/sh", job, dir.Path, output, () => { }, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(1), NullLogger.Instance, CancellationToken.None);
 
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"took {watch.Elapsed}");
         Assert.Equal(1_000, emitted);
+    }
+
+    [Fact]
+    public async Task A_job_that_never_starts_gets_the_shorter_connect_timeout()
+    {
+        using var dir = new TempDir();
+        using var output = new MemoryStream();
+        var job = new FfmpegJob(["-c", "sleep 30"], new Dictionary<string, string>());
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var emitted = await FfmpegProcess.RunAsync("/bin/sh", job, dir.Path, output, () => { }, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), NullLogger.Instance, CancellationToken.None);
+
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"took {watch.Elapsed}");
+        Assert.Equal(0, emitted);
+    }
+
+    [Fact]
+    public async Task Once_started_a_job_keeps_the_longer_stall_timeout()
+    {
+        using var dir = new TempDir();
+        using var output = new MemoryStream();
+        var job = new FfmpegJob(["-c", "printf a; sleep 2; echo out_time_us=2000000 >&2; printf b"], new Dictionary<string, string>());
+
+        var emitted = await FfmpegProcess.RunAsync("/bin/sh", job, dir.Path, output, () => { }, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), NullLogger.Instance, CancellationToken.None);
+
+        Assert.Equal(2_000, emitted);
+        Assert.Equal("ab"u8.ToArray(), output.ToArray());
     }
 
     [Fact]

@@ -19,6 +19,9 @@ internal sealed class ChannelStream : ILiveStream
     // A job whose output stops for this long is killed and replaced by the next fallback.
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(45);
 
+    // The same, for a job that hasn't written anything yet.
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
+
     private readonly string _channelId;
     private readonly ChannelLook _look;
     private readonly Picture _picture;
@@ -120,7 +123,7 @@ internal sealed class ChannelStream : ILiveStream
                         offsetMs,
                         durationMs,
                         outputS,
-                        (job, c2) => FfmpegProcess.RunAsync(_ffmpegPath, job, _workDir, output, () => started.TrySetResult(), StallTimeout, _logger, c2),
+                        (job, c2) => FfmpegProcess.RunAsync(_ffmpegPath, job, _workDir, output, () => started.TrySetResult(), ConnectTimeout, StallTimeout, _logger, c2),
                         _logger,
                         c,
                         segment.Url is null ? null : await _originals.FindAsync(segment.Url, c).ConfigureAwait(false),
