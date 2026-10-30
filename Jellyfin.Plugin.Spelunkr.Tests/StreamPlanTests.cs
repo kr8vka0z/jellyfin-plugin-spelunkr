@@ -85,6 +85,18 @@ public class StreamPlanTests
     }
 
     [Fact]
+    public void A_better_original_plays_first_with_spelunkrs_file_behind_it()
+    {
+        var show = new Segment { Kind = "show", Url = "https://archive.org/download/x/x.mp4", InMs = 1_000, Title = "X" };
+
+        var jobs = FfmpegJobs.For(show, Gumshoe, 5_000, 8_000, 0, originalUrl: "https://archive.org/download/x/x.m4v");
+
+        Assert.Equal(["https://archive.org/download/x/x.m4v", "https://archive.org/download/x/x.mp4", "https://archive.org/download/x/x.mp4"], jobs.Take(3).Select(j => Arg(j.Args, "-i")));
+        Assert.All(jobs.Take(2), j => Assert.Equal("6.000", Arg(j.Args, "-ss"))); // same moment in either file
+        Assert.Equal(4, jobs.Count); // original, Spelunkr's file, Spelunkr's file with silence, title slate
+    }
+
+    [Fact]
     public void Ads_get_their_volume_correction()
     {
         var ad = new Segment { Kind = "ad", Url = "https://archive.org/download/t/t.mp4", GainDb = -0.8 };

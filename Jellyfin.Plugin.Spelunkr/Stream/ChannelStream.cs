@@ -22,6 +22,7 @@ internal sealed class ChannelStream : ILiveStream
     private readonly string _channelId;
     private readonly ChannelLook _look;
     private readonly SpelunkrSource _source;
+    private readonly ArchiveOriginals _originals;
     private readonly string _ffmpegPath;
     private readonly string _workDir;
     private readonly string _filePath;
@@ -31,11 +32,12 @@ internal sealed class ChannelStream : ILiveStream
     private Task? _pump;
     private DateTime _openedUtc;
 
-    public ChannelStream(string channelId, ChannelLook look, MediaSourceInfo mediaSource, string tunerHostId, SpelunkrSource source, string ffmpegPath, string streamsDir, IServerApplicationHost appHost, ILogger logger)
+    public ChannelStream(string channelId, ChannelLook look, MediaSourceInfo mediaSource, string tunerHostId, SpelunkrSource source, ArchiveOriginals originals, string ffmpegPath, string streamsDir, IServerApplicationHost appHost, ILogger logger)
     {
         _channelId = channelId;
         _look = look;
         _source = source;
+        _originals = originals;
         _ffmpegPath = ffmpegPath;
         _appHost = appHost;
         _logger = logger;
@@ -110,7 +112,7 @@ internal sealed class ChannelStream : ILiveStream
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     (atMs, c) => _source.SegmentAtAsync(_channelId, atMs, c),
-                    (segment, offsetMs, durationMs, outputS, c) => SegmentPlayer.PlayAsync(
+                    async (segment, offsetMs, durationMs, outputS, c) => await SegmentPlayer.PlayAsync(
                         segment,
                         _look,
                         offsetMs,
@@ -118,7 +120,8 @@ internal sealed class ChannelStream : ILiveStream
                         outputS,
                         (job, c2) => FfmpegProcess.RunAsync(_ffmpegPath, job, _workDir, output, () => started.TrySetResult(), StallTimeout, _logger, c2),
                         _logger,
-                        c),
+                        c,
+                        segment.Url is null ? null : await _originals.FindAsync(segment.Url, c).ConfigureAwait(false)).ConfigureAwait(false),
                     Task.Delay,
                     ct).ConfigureAwait(false);
             }

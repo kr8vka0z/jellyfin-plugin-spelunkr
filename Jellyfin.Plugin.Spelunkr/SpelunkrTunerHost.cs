@@ -25,15 +25,17 @@ public sealed class SpelunkrTunerHost : ITunerHost
     public const string ChannelIdPrefix = "spelunkr_";
 
     private readonly SpelunkrSource _source;
+    private readonly ArchiveOriginals _originals;
     private readonly IConfigurationManager _config;
     private readonly IMediaEncoder _mediaEncoder;
     private readonly IServerApplicationHost _appHost;
     private readonly ILogger<SpelunkrTunerHost> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="SpelunkrTunerHost"/> class.</summary>
-    public SpelunkrTunerHost(SpelunkrSource source, IConfigurationManager config, IMediaEncoder mediaEncoder, IServerApplicationHost appHost, ILogger<SpelunkrTunerHost> logger)
+    public SpelunkrTunerHost(SpelunkrSource source, ArchiveOriginals originals, IConfigurationManager config, IMediaEncoder mediaEncoder, IServerApplicationHost appHost, ILogger<SpelunkrTunerHost> logger)
     {
         _source = source;
+        _originals = originals;
         _config = config;
         _mediaEncoder = mediaEncoder;
         _appHost = appHost;
@@ -88,7 +90,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
             ?? throw new FileNotFoundException($"Spelunkr channel {id} is not offered");
         var tuner = Registration.FindTuner(_config) ?? throw new FileNotFoundException("Spelunkr tuner is not set up");
 
-        var stream = new ChannelStream(id, new ChannelLook(channel.Name, channel.Color), NewMediaSource(channelId), tuner.Id, _source, _mediaEncoder.EncoderPath, StreamsDir(_config), _appHost, _logger);
+        var stream = new ChannelStream(id, new ChannelLook(channel.Name, channel.Color), NewMediaSource(channelId), tuner.Id, _source, _originals, _mediaEncoder.EncoderPath, StreamsDir(_config), _appHost, _logger);
         try
         {
             await stream.Open(cancellationToken).ConfigureAwait(false);

@@ -34,7 +34,12 @@ public static class FfmpegJobs
     /// <param name="offsetMs">How far into the segment to start.</param>
     /// <param name="durationMs">How long to run.</param>
     /// <param name="outputOffsetS">Where this job sits in the stream's timeline, so timestamps keep counting up.</param>
-    public static IReadOnlyList<FfmpegJob> For(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS)
+    /// <param name="originalUrl">
+    /// A better copy of <see cref="Segment.Url"/> (same film, same length; see <see cref="ArchiveOriginals"/>),
+    /// tried first with Spelunkr's own file behind it. Must stay the same for every call about one segment: the
+    /// player picks fallbacks by position in this list.
+    /// </param>
+    public static IReadOnlyList<FfmpegJob> For(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS, string? originalUrl = null)
     {
         var tail = Tail(durationMs, outputOffsetS);
         var jobs = new List<FfmpegJob>();
@@ -42,8 +47,14 @@ public static class FfmpegJobs
         {
             case "show" or "ad" when segment.Url is not null:
             {
-                var input = Net().Concat(["-ss", Seconds(segment.InMs + offsetMs), "-i", segment.Url]).ToList();
                 var audio = Audio + (segment.GainDb != 0 ? string.Create(CultureInfo.InvariantCulture, $",volume={segment.GainDb}dB") : string.Empty) + ",apad";
+                List<string> Input(string url) => [.. Net(), "-ss", Seconds(segment.InMs + offsetMs), "-i", url];
+                if (originalUrl is not null)
+                {
+                    jobs.Add(new([.. Head, .. Input(originalUrl), "-map", "0:v:0", "-map", "0:a:0", "-vf", Video + PadVideo, "-af", audio, .. tail], Empty));
+                }
+
+                var input = Input(segment.Url);
                 jobs.Add(new([.. Head, .. input, "-map", "0:v:0", "-map", "0:a:0", "-vf", Video + PadVideo, "-af", audio, .. tail], Empty));
                 jobs.Add(new([.. Head, .. input, "-f", "lavfi", "-i", Silence, "-map", "0:v:0", "-map", "1:a", "-vf", Video + PadVideo, .. tail], Empty));
                 break;
