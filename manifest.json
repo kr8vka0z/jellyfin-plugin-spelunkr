@@ -8,6 +8,14 @@
     "category": "Live TV",
     "versions": [
       {
+        "version": "0.3.1.0",
+        "changelog": "https://github.com/kr8vka0z/jellyfin-plugin-spelunkr/releases/tag/v0.3.1",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/kr8vka0z/jellyfin-plugin-spelunkr/releases/download/v0.3.1/jellyfin-plugin-spelunkr_0.3.1.0.zip",
+        "checksum": "235ff73030eb81cad84b221d25d9c756",
+        "timestamp": "2026-10-30T15:07:26Z"
+      },
+      {
         "version": "0.3.0.0",
         "changelog": "https://github.com/kr8vka0z/jellyfin-plugin-spelunkr/releases/tag/v0.3.0",
         "targetAbi": "12.3.0.0",
