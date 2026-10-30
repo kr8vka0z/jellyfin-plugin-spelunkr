@@ -60,7 +60,7 @@ continuous TV stream.
   carries on from the exact point it stopped (ffmpeg reports how much it wrote); if all fail, the stream moves
   on by only what was written and asks the schedule again (jumping to now if it fell behind); if nothing at all
   can be written, not even the title card, the stream stops instead of retrying. Remote inputs have a 15 s read timeout, and a job that writes
-  nothing for 45 s is killed.
+  nothing for 15 s from its start, or for 45 s once it has written, is killed.
 - **Better source files.** Spelunkr links archive.org's compressed derivative (~1 Mbps). When the item's metadata
   names an original for it that is an MP4-family file (seekable over HTTP), the same length within 1 s (the
   schedule seeks by time), and under 8 Mbps (streams smoothly at playback speed), that original is tried first
