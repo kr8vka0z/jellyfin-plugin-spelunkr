@@ -35,6 +35,27 @@ public class SegmentPlaybackTests
     }
 
     [Fact]
+    public async Task Gpu_film_that_dies_part_way_is_finished_by_the_same_film_on_the_cpu_not_the_slate()
+    {
+        // The upscaler (libplacebo) breaks after 20 s while plain GPU encoding still works: the slate's GPU job
+        // would succeed, so it must not come before the film's CPU twin.
+        var ran = new List<FfmpegJob>();
+        var emitted = await SegmentPlayer.PlayAsync(Film, Look, 0, 60_000, 0, (job, _) =>
+        {
+            ran.Add(job);
+            var upscaled = job.Args.Any(a => a.Contains("libplacebo", StringComparison.Ordinal));
+            return Task.FromResult(upscaled ? (ran.Count == 1 ? 20_000L : 0L) : long.Parse(Arg(job, "-t").Replace(".", string.Empty, StringComparison.Ordinal), CultureInfo.InvariantCulture));
+        }, NullLogger.Instance, CancellationToken.None, picture: Picture.Gpu("/test/render-node"));
+
+        Assert.Equal(60_000, emitted);
+        Assert.Equal(2, ran.Count);
+        Assert.Equal("libx264", Arg(ran[1], "-c:v"));
+        Assert.Equal(Film.Url, Arg(ran[1], "-i"));
+        Assert.Equal("20.000", Arg(ran[1], "-ss"));
+        Assert.Equal("20.000", Arg(ran[1], "-output_ts_offset"));
+    }
+
+    [Fact]
     public async Task When_every_fallback_fails_it_reports_what_was_actually_emitted()
     {
         var ran = 0;
