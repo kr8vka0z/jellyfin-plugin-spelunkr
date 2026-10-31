@@ -92,7 +92,13 @@ public sealed class SpelunkrTunerHost : ITunerHost
             ?? throw new FileNotFoundException($"Spelunkr channel {id} is not offered");
         var tuner = Registration.FindTuner(_config) ?? throw new FileNotFoundException("Spelunkr tuner is not set up");
 
+        // Chosen here and kept for the stream's life, so a settings change never alters a running picture.
         var picture = CurrentPicture(_logger);
+        if (Plugin.Instance?.Configuration.ShowCabinet ?? true)
+        {
+            picture = picture with { Cabinet = await CabinetArt.ForChannelAsync(_mediaEncoder.EncoderPath, CabinetsDir(_config), picture.Height, channel, _logger, cancellationToken).ConfigureAwait(false) };
+        }
+
         var stream = new ChannelStream(id, new ChannelLook(channel.Name, channel.Color), picture, NewMediaSource(channelId, picture), tuner.Id, _source, _originals, _mediaEncoder.EncoderPath, StreamsDir(_config), _appHost, _logger);
         try
         {
@@ -114,6 +120,12 @@ public sealed class SpelunkrTunerHost : ITunerHost
 
     /// <summary>Where open streams keep their files. Emptied at startup by Registration.</summary>
     internal static string StreamsDir(IConfigurationManager config) => Path.Combine(config.CommonApplicationPaths.CachePath, "spelunkr-streams");
+
+    /// <summary>
+    /// Where finished cabinet images are kept. In the data folder, not the cache: Jellyfin's cache cleaner removes files
+    /// over a month old, which would pull the image out from under a stream left running.
+    /// </summary>
+    internal static string CabinetsDir(IConfigurationManager config) => Path.Combine(config.CommonApplicationPaths.DataPath, "spelunkr-cabinets");
 
     /// <summary>
     /// The channel's logo as a PNG file Jellyfin reads directly, drawn on first use. The name carries a hash of

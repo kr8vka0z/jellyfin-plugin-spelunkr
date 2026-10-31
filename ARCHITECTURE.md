@@ -29,7 +29,9 @@ continuous TV stream.
 - **Stream** (`Stream/`): `ChannelStream` runs one ffmpeg per schedule segment and appends the output to a file
   Jellyfin serves to its players. `FfmpegJobs` builds the commands, `StreamPump` walks the schedule, `SegmentPlayer` walks the fallbacks,
   `FfmpegProcess` runs one job and measures what it wrote, `BumpCards` times the bump text, `Pacing` keeps the
-  stream on the wall clock, `ArchiveOriginals` finds a film's better original file on archive.org.
+  stream on the wall clock, `ArchiveOriginals` finds a film's better original file on archive.org, `CabinetArt`
+  puts the channel's logo on the TV cabinet image.
+- **Settings** (`Plugin.cs`, `configPage.html`): one switch, "Show the TV cabinet", on Jellyfin's plugin page.
 
 ## Data flow
 
@@ -68,7 +70,16 @@ continuous TV stream.
   schedule seeks by time), and under 8 Mbps (streams smoothly at playback speed), that original is tried first
   with Spelunkr's file behind it. Lookups wait 2.5 s at most so tune-in isn't held up; results are cached 12 h,
   failures 10 min.
-- **GPU picture follows Jellyfin's own setting.** No plugin settings page: when Jellyfin's hardware acceleration is
+- **The TV cabinet is burned into the video.** Jellyfin has no way to draw over a player on every client, so the
+  cabinet is part of the stream and shows the same on anything. The art ships as one PNG per stream size with a
+  see-through tube (drawn by `tools/cabinet/render.ts`; scaling 1080p's scanlines down to 720p makes bands). The tube is 4:3, so an old
+  film fills it. `CabinetArt` adds the logo when a stream opens and keeps the result in Jellyfin's data folder, because
+  the cache cleaner deletes files over a month old. The image is decoded once per job and looped, which keeps a GPU film
+  near 10x playback speed instead of 3x. On a GPU stream every job, cards included, draws the cabinet with the same libplacebo
+  filter, with its color handling pinned to bt709, and the CPU route is pinned to match: otherwise the wood changes
+  shade with each film's color tags at every join. The setting is read once when a stream opens, and viewers who
+  join later share that stream, so a running picture never changes.
+- **GPU picture follows Jellyfin's own setting.** When Jellyfin's hardware acceleration is
   VA-API with hardware encoding on and Jellyfin found Vulkan works on the device, films are lightly denoised on the
   CPU, then upscaled to 1080p with libplacebo (ewa_lanczossharp, debanding) and encoded with h264_vaapi. Bumps,
   cards and slates are drawn at 1080p (same layout, scaled font) and encoded on the GPU too. Each job except an

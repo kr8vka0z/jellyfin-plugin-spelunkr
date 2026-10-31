@@ -19,7 +19,7 @@ VACATION SLIDES: its silent home movies are scored with music the plugin can't a
 4. Open **Live TV**. The channels are there with their guide. If the guide is empty, give it a few minutes: Jellyfin fills it in
    shortly after starting.
 
-Needs Jellyfin 12.3 or newer. There is nothing to set up. To remove it, uninstall the plugin; the Spelunkr entries
+Needs Jellyfin 12.3 or newer. There is nothing you have to set up. To remove it, uninstall the plugin; the Spelunkr entries
 it added under Live TV's tuner and guide settings can then be deleted there.
 
 ### Install by hand
@@ -36,11 +36,13 @@ config folder, and restart Jellyfin.
 - A guide listing each film or show from when it starts until the next one starts, with its poster from the
   Internet Archive and, where Spelunkr wrote one, a description with director and cast.
 - A sharper picture than the site's own: where the Internet Archive has a better-quality original of a film,
-  the plugin plays that instead of the compressed copy. Older 4:3 films keep their black bars at the sides; nothing
-  is stretched.
+  the plugin plays that instead of the compressed copy. Nothing is stretched.
 - If your Jellyfin uses a graphics card through VA-API (Dashboard → Playback → Transcoding → Hardware acceleration),
   channels play at 1920x1080: films are cleaned up and enlarged on the graphics card. Otherwise they play at
   1280x720. There is nothing to set in the plugin; it follows that Jellyfin setting.
+- Every channel plays inside a wood-grain TV cabinet with the channel's logo on it. To turn that off, open the
+  plugin's page under Dashboard → Plugins and untick **Show the TV cabinet**. It takes effect the next time a channel
+  is opened with nobody watching it.
 
 Your Jellyfin server does the video work: it converts each film as it plays. Without a graphics card that keeps
 about one CPU core busy while someone is watching; with VA-API most of the work moves to the graphics card.
