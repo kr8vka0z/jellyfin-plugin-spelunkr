@@ -1,5 +1,5 @@
 # spelunkr-check.yml: once a day, check that spelunkr.tv still works the way this plugin expects (data shape,
-# engine version, engine code, and what is actually playing). On failure, open or update an issue labelled
+# engine version, and what is actually playing on every channel). On failure, open or update an issue labelled
 # broken-by-spelunkr with the details. Run it by hand with simulate_break to prove the issue path works.
 name: Spelunkr check
 
