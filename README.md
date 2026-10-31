@@ -28,6 +28,19 @@ Download the zip from the [latest release](https://github.com/kr8vka0z/jellyfin-
 into a folder named `Spelunkr_<version>` (for example `Spelunkr_0.1.0.0`) inside the `plugins` folder of Jellyfin's
 config folder, and restart Jellyfin.
 
+### Try test builds
+
+Test builds carry changes that haven't been released yet, and they can break. In the same Jellyfin repositories
+list, add a second repository:
+
+- Name: `Spelunkr test`
+- URL: `https://raw.githubusercontent.com/kr8vka0z/jellyfin-plugin-spelunkr/dev/manifest-dev.json`
+
+Jellyfin then offers the newest test build as an update to Spelunkr, unless a newer real release has just come
+out. Install it from the Catalog and restart. When a real release comes out it outranks the test build, so you move
+onto it the same way. To stop, remove that
+repository; you stay on the test build until the next release.
+
 ## What you'll see
 
 - The film that is on spelunkr.tv right now, at the same minute, plus the ads and the short text "bumps" between
@@ -57,7 +70,9 @@ consider donating to them.
 - Build and test: `dotnet test` (needs the .NET 10 SDK)
 - Plugin build: `dotnet publish Jellyfin.Plugin.Spelunkr -c Release -o artifacts/plugin`, then copy
   `Jellyfin.Plugin.Spelunkr.dll`, `Jint.dll` and `Acornima.dll` into a plugin folder as above
-- Release: push a tag like `v0.1.0`; the release workflow builds the zip and updates `manifest.json`
+- Contributing: PRs go into `dev`. Each push there publishes a test build, unless it needs the workflow-change step in [AGENTS.md](./AGENTS.md)
+- Release: the release job opens a release PR from `dev`, and merging it publishes the version and updates
+  `manifest.json`. Steps in [AGENTS.md](./AGENTS.md)
 - How it works and why: [ARCHITECTURE.md](./ARCHITECTURE.md). Notes for AI coding agents: [AGENTS.md](./AGENTS.md)
 
 Folders:
@@ -67,5 +82,6 @@ Folders:
 - `tools/extract-engine/`: copies Spelunkr's schedule code out of their website
 - `tools/oracle/`: runs the same schedule code in Bun, to see what is on at any time
 - `tools/check/`: the daily check that Spelunkr hasn't changed in a way that breaks the plugin
+- `tools/release/`: cuts releases and keeps test builds out of the public feed
 
 MIT licensed.
