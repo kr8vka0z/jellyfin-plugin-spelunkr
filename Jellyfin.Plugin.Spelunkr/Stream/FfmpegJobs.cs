@@ -21,8 +21,21 @@ public sealed record FfmpegJob(IReadOnlyList<string> Args, IReadOnlyDictionary<s
 /// <param name="Height">Frame height.</param>
 /// <param name="MaxRateK">Video bitrate cap, kbit/s.</param>
 /// <param name="VaapiDevice">The GPU's device path from Jellyfin's settings; null for a CPU stream.</param>
-public sealed record Picture(int Width, int Height, int MaxRateK, string? VaapiDevice)
+/// <param name="Cabinet">The channel's TV cabinet image at this size (see <see cref="CabinetArt"/>); null for a plain full-frame picture.</param>
+public sealed record Picture(int Width, int Height, int MaxRateK, string? VaapiDevice, string? Cabinet = null)
 {
+    /// <summary>Gets the left edge of the cabinet's tube, in pixels. Must match the art (tools/cabinet/render.ts).</summary>
+    public int TubeX => Width * 312 / 1920;
+
+    /// <summary>Gets the top edge of the tube.</summary>
+    public int TubeY => Height * 54 / 1080;
+
+    /// <summary>Gets the tube's width: exactly 4:3, so an old square film fills it.</summary>
+    public int TubeWidth => Width * 1296 / 1920;
+
+    /// <summary>Gets the tube's height.</summary>
+    public int TubeHeight => Height * 972 / 1080;
+
     // 5000k at 720p: the cap only bites on busy, grainy scenes, which is where old film looked blocky at the old
     // 3000k, while staying an easy stream for any home network or player. 8000k is the same per-pixel budget at 1080p.
 
@@ -74,12 +87,12 @@ public static class FfmpegJobs
                 List<string> Input(string url) => [.. Net(), "-ss", Seconds(segment.InMs + offsetMs), "-i", url];
                 if (originalUrl is not null)
                 {
-                    jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. Input(originalUrl), "-map", "0:v:0", "-map", "0:a:0", "-vf", Film(p, gpu), "-af", audio, .. Tail(gpu)], Empty));
+                    jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. Input(originalUrl), .. FilmVideo(p, gpu, 1), "-map", "0:a:0", "-af", audio, .. Tail(gpu)], Empty));
                 }
 
                 var input = Input(segment.Url);
-                jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, "-map", "0:v:0", "-map", "0:a:0", "-vf", Film(p, gpu), "-af", audio, .. Tail(gpu)], Empty));
-                jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, "-f", "lavfi", "-i", Silence, "-map", "0:v:0", "-map", "1:a", "-vf", Film(p, gpu), .. Tail(gpu)], Empty));
+                jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, .. FilmVideo(p, gpu, 1), "-map", "0:a:0", "-af", audio, .. Tail(gpu)], Empty));
+                jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, "-f", "lavfi", "-i", Silence, .. FilmVideo(p, gpu, 2), "-map", "1:a", .. Tail(gpu)], Empty));
                 break;
             }
 
@@ -99,11 +112,11 @@ public static class FfmpegJobs
                 {
                     jobs.Add(gpu => new(
                         [.. Head, .. CardDevices(p, gpu), .. Color(look, p), .. Remote, "-ss", Seconds((music.StartOffsetS * 1000) + offsetMs), "-i", music.Url,
-                         "-filter_complex", $"{filter}{Upload(gpu)}[v];[1:a]{Audio},apad[a]", "-map", "[v]", "-map", "[a]", .. Tail(gpu)],
+                         .. CardVideo(p, gpu, filter, $";[1:a]{Audio},apad[a]"), "-map", "[v]", "-map", "[a]", .. Tail(gpu)],
                         files));
                 }
 
-                jobs.Add(gpu => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, "-filter_complex", $"{filter}{Upload(gpu)}[v]", "-map", "[v]", "-map", "1:a", .. Tail(gpu)], files));
+                jobs.Add(gpu => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, .. CardVideo(p, gpu, filter), "-map", "[v]", "-map", "1:a", .. Tail(gpu)], files));
                 break;
             }
         }
@@ -111,7 +124,7 @@ public static class FfmpegJobs
         // The last resort: the channel color with the title (or channel name) and silence.
         var slateText = segment.Title ?? look.Name;
         var (slate, slateFiles) = Cards([new BumpCard(offsetMs, offsetMs + durationMs, slateText)], look, offsetMs, p);
-        jobs.Add(gpu => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, "-filter_complex", $"{slate}{Upload(gpu)}[v]", "-map", "[v]", "-map", "1:a", .. Tail(gpu)], slateFiles));
+        jobs.Add(gpu => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, .. CardVideo(p, gpu, slate), "-map", "[v]", "-map", "1:a", .. Tail(gpu)], slateFiles));
 
         // On the GPU each job is followed by its CPU twin, so a failed GPU film is retried as the same film on the CPU
         // before anything further down the list (a GPU title slate would otherwise fill the rest of the film).
@@ -135,7 +148,7 @@ public static class FfmpegJobs
         var p = picture ?? Picture.Cpu;
         var text = "TUNING IN\n\n" + look.Name + (segment.Kind == "show" && segment.Title is not null ? "\n\n" + segment.Title : string.Empty);
         var (filter, files) = Cards([new BumpCard(0, durationMs, text)], look, 0, p);
-        FfmpegJob Job(bool gpu) => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, "-filter_complex", $"{filter}{Upload(gpu)}[v]", "-map", "[v]", "-map", "1:a", .. Encode(p, gpu, durationMs, 0)], files);
+        FfmpegJob Job(bool gpu) => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, .. CardVideo(p, gpu, filter), "-map", "[v]", "-map", "1:a", .. Encode(p, gpu, durationMs, 0)], files);
         return p.VaapiDevice is null ? [Job(false)] : [Job(true), Job(false)];
     }
 
@@ -156,7 +169,7 @@ public static class FfmpegJobs
     private static string[] Remote => ["-rw_timeout", "15000000", "-reconnect", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5"];
 
     private static string[] Color(ChannelLook look, Picture p) =>
-        [.. Paced, "-f", "lavfi", "-i", string.Create(CultureInfo.InvariantCulture, $"color=c=0x{look.Color.TrimStart('#')}:s={p.Width}x{p.Height}:r=30")];
+        [.. Paced, "-f", "lavfi", "-i", string.Create(CultureInfo.InvariantCulture, $"color=c=0x{look.Color.TrimStart('#')}:s={(p.Cabinet is null ? p.Width : p.TubeWidth)}x{(p.Cabinet is null ? p.Height : p.TubeHeight)}:r=30")];
 
     // Films on the GPU: libplacebo (a Vulkan filter) upscales, so Vulkan is opened on top of the VA-API device and
     // the frames are handed back to VA-API for the encoder without leaving the GPU.
@@ -164,18 +177,55 @@ public static class FfmpegJobs
         ? ["-init_hw_device", "vaapi=va:" + p.VaapiDevice, "-init_hw_device", "vulkan=vk@va", "-filter_hw_device", "vk"]
         : [];
 
-    // Cards are drawn on the CPU (drawtext) and only uploaded for the GPU encoder.
-    private static string[] CardDevices(Picture p, bool gpu) => gpu ? ["-init_hw_device", "vaapi=va:" + p.VaapiDevice, "-filter_hw_device", "va"] : [];
+    // Cards are drawn on the CPU (drawtext) and only uploaded for the GPU encoder. With a cabinet they go through the
+    // same GPU filter as films, so the wood stays the same shade across a film-to-card join.
+    private static string[] CardDevices(Picture p, bool gpu) => p.Cabinet is not null ? FilmDevices(p, gpu)
+        : gpu ? ["-init_hw_device", "vaapi=va:" + p.VaapiDevice, "-filter_hw_device", "va"] : [];
 
     private static string Upload(bool gpu) => gpu ? ",format=nv12,hwupload" : string.Empty;
 
+    // The cabinet goes last among a job's inputs, so the film's, the music's and the silence's numbers never change.
+    private static string[] CabinetInput(Picture p) => p.Cabinet is null ? [] : ["-framerate", "30", "-i", p.Cabinet];
+
+    private static string[] FilmVideo(Picture p, bool gpu, int cabinetInput) => p.Cabinet is null
+        ? ["-map", "0:v:0", "-vf", Film(p, gpu)]
+        : [.. CabinetInput(p), "-filter_complex", Framed(p, gpu, "[0:v]" + (gpu ? Denoised : TubeFit(p)), cabinetInput), "-map", "[v]"];
+
+    private static string[] CardVideo(Picture p, bool gpu, string card, string more = "") =>
+        [.. CabinetInput(p), "-filter_complex", (p.Cabinet is null ? card + Upload(gpu) + "[v]" : Framed(p, gpu, card, 2)) + more];
+
+    /// <summary>
+    /// Draws the cabinet over <paramref name="video"/>, which is a filter chain ending in a yuv420p picture, and
+    /// labels the result [v]. The cabinet is decoded and handed to the loop once: redoing that for every frame took
+    /// a GPU film from 10x playback speed to 3x, for a picture that never changes.
+    /// </summary>
+    /// <remarks>
+    /// Both routes convert the picture to bt709 and pin the cabinet's color handling. Left alone it follows each
+    /// film's own color tags, and the wood visibly changes shade at a join. The film must be converted, not relabeled,
+    /// or a film in another color space plays with the wrong colors.
+    /// </remarks>
+    private static string Framed(Picture p, bool gpu, string video, int cabinetInput) => gpu
+        ? string.Create(CultureInfo.InvariantCulture, $"{video},hwupload[a];[{cabinetInput}:v]format=rgba,setparams=color_trc=bt709:color_primaries=bt709,hwupload,loop=-1:1:0[b];[a][b]libplacebo=inputs=2:w={p.Width}:h={p.Height}:fps=30:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12:colorspace=bt709:range=tv:color_primaries=bt709:color_trc=bt709:{Place("x", p.TubeX, 0)}:{Place("y", p.TubeY, 0)}:{Place("w", p.TubeWidth, p.Width)}:{Place("h", p.TubeHeight, p.Height)},hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1[v]")
+        : string.Create(CultureInfo.InvariantCulture, $"{video},pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,scale=out_color_matrix=bt709:out_range=tv[a];[{cabinetInput}:v]format=yuva420p,loop=-1:1:0[b];[a][b]overlay,format=yuv420p,setsar=1[v]");
+
+    // libplacebo's placement for its two inputs: the film (input 0) in the tube, the cabinet (input 1) over the frame.
+    private static string Place(string axis, int film, int cabinet) =>
+        string.Create(CultureInfo.InvariantCulture, $"pos_{axis}=if(eq(in_idx\\,0)\\,{film}\\,{cabinet})");
+
+    // A film on the CPU, sized to the tube: scaled down to fit, never stretched, 30 fps. Framed centers it.
+    private static string TubeFit(Picture p) =>
+        string.Create(CultureInfo.InvariantCulture, $"scale={p.TubeWidth}:{p.TubeHeight}:force_original_aspect_ratio=decrease,setsar=1,fps=30,format=yuv420p{PadVideo}");
+
     /// <summary>The film's video filter: fit inside the frame with black side bars (never stretched), 30 fps.</summary>
     private static string Film(Picture p, bool gpu) => gpu
-        // A light denoise (hqdn3d, half its default strength) on the small source frame first, so the sharp scaler
-        // doesn't sharpen film grain and compression blocks too; then libplacebo's ewa_lanczossharp upscale with
-        // debanding (smooths the stepped gradients of the old ~1 Mbps encodes). Measured ~8x real time on a home GPU.
-        ? string.Create(CultureInfo.InvariantCulture, $"hqdn3d=2:1.5:3:2.25,fps=30{PadVideo},format=yuv420p,hwupload,libplacebo=w={p.Width}:h={p.Height}:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12,hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1")
+        // Then libplacebo's ewa_lanczossharp upscale with debanding (smooths the stepped gradients of the old ~1 Mbps
+        // encodes). Measured ~8x real time on a home GPU.
+        ? string.Create(CultureInfo.InvariantCulture, $"{Denoised},hwupload,libplacebo=w={p.Width}:h={p.Height}:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12,hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1")
         : string.Create(CultureInfo.InvariantCulture, $"scale={p.Width}:{p.Height}:force_original_aspect_ratio=decrease,pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p{PadVideo}");
+
+    // A light denoise (hqdn3d, half its default strength) on the small source frame, so the sharp scaler that follows
+    // doesn't sharpen film grain and compression blocks too.
+    private static string Denoised => $"hqdn3d=2:1.5:3:2.25,fps=30{PadVideo},format=yuv420p";
 
     // No B-frames (-bf 0): with them each job's first video timestamps start slightly before the previous job's
     // last ones, which players see as time going backwards at every join.
@@ -202,8 +252,10 @@ public static class FfmpegJobs
     private static (string Filter, Dictionary<string, string> Files) Cards(IReadOnlyList<BumpCard> cards, ChannelLook look, long offsetMs, Picture p)
     {
         // Sizes are set for a 720-line frame and scaled with it, so a card looks the same at 1080p (and wraps the same).
-        var fontSize = 48 * p.Height / 720;
-        var lineSpacing = 14 * p.Height / 720;
+        // In the narrower tube the words shrink less than the width does, so they wrap sooner.
+        var (font, spacing, wrap) = p.Cabinet is null ? (48, 14, 34) : (40, 12, 30);
+        var fontSize = font * p.Height / 720;
+        var lineSpacing = spacing * p.Height / 720;
         var files = new Dictionary<string, string>();
         var parts = new List<string> { "[0:v]format=yuv420p" };
         foreach (var card in cards.Where(c => c.EndMs > offsetMs))
@@ -211,7 +263,7 @@ public static class FfmpegJobs
             // Text goes through files named in the job's working folder: drawtext's inline quoting rules
             // can't safely carry arbitrary slide text (quotes, colons, percent signs).
             var name = string.Create(CultureInfo.InvariantCulture, $"t{files.Count}.txt");
-            files[name] = Wrap(card.Text);
+            files[name] = Wrap(card.Text, wrap);
             parts.Add(string.Create(
                 CultureInfo.InvariantCulture,
                 $"drawtext=textfile={name}:expansion=none:fontcolor={TextColor(look.Color)}:fontsize={fontSize}:line_spacing={lineSpacing}:text_align=C:x=(w-tw)/2:y=(h-th)/2:enable='gte(t,{(card.StartMs - offsetMs) / 1000.0:0.000})*lt(t,{(card.EndMs - offsetMs) / 1000.0:0.000})'"));
@@ -228,16 +280,16 @@ public static class FfmpegJobs
         return luma > 140 ? "0x1A1A1A" : "0xF5F5F5";
     }
 
-    /// <summary>Breaks text into lines of about 34 characters so a line fits the frame (the font scales with it).</summary>
-    private static string Wrap(string text) => string.Join('\n', text.Split('\n').Select(WrapLine));
+    /// <summary>Breaks text into lines of about <paramref name="width"/> characters so a line fits (the font scales with the picture).</summary>
+    private static string Wrap(string text, int width) => string.Join('\n', text.Split('\n').Select(t => WrapLine(t, width)));
 
-    private static string WrapLine(string text)
+    private static string WrapLine(string text, int width)
     {
         var lines = new List<string>();
         var line = string.Empty;
         foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
-            if (line.Length > 0 && line.Length + 1 + word.Length > 34)
+            if (line.Length > 0 && line.Length + 1 + word.Length > width)
             {
                 lines.Add(line);
                 line = word;

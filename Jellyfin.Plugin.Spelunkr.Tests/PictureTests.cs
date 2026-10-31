@@ -103,6 +103,83 @@ public partial class PictureTests
         Assert.Contains("fontsize=72", Arg(slate.Args, "-filter_complex"), StringComparison.Ordinal); // 48 px at 720p, scaled
     }
 
+    private const string Cabinet = "/test/cabinet.png";
+
+    public static TheoryData<string> CabinetModes => new() { "cpu", "gpu" };
+
+    private static Picture WithCabinet(string mode) => (mode == "gpu" ? Picture.Gpu(Device) : Picture.Cpu) with { Cabinet = Cabinet };
+
+    [Theory]
+    [MemberData(nameof(CabinetModes))]
+    public void Every_job_of_every_kind_draws_the_cabinet_when_the_stream_has_one(string mode)
+    {
+        var picture = WithCabinet(mode);
+
+        foreach (var job in EveryKind(picture).Append(FfmpegJobs.TuningIn(new Segment { Kind = "show", Title = "X" }, Look, 4_000, picture)).SelectMany(j => j))
+        {
+            // The cabinet is the last input, whatever else the job reads.
+            var inputs = Inputs(job.Args);
+            Assert.Equal(Cabinet, inputs[^1]);
+            var filter = Arg(job.Args, "-filter_complex");
+            Assert.Contains($"[{inputs.Count - 1}:v]", filter, StringComparison.Ordinal);
+            // Decoded once and looped: doing it per frame cost a GPU film two thirds of its speed.
+            Assert.Contains("loop=-1:1:0", filter, StringComparison.Ordinal);
+            Assert.DoesNotContain("-vf", job.Args);
+            // Pinned, or the wood changes shade with each film's color tags.
+            Assert.Contains("bt709", filter, StringComparison.Ordinal);
+            // Converted, never relabeled: setparams only changes the tag, which leaves other color spaces wrong.
+            Assert.DoesNotContain("setparams=colorspace", filter, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Without_a_cabinet_no_job_reads_or_draws_one()
+    {
+        foreach (var job in EveryKind(Picture.Gpu(Device)).SelectMany(j => j))
+        {
+            Assert.DoesNotContain(Cabinet, job.Args);
+            Assert.DoesNotContain(job.Args, a => a.Contains("loop=", StringComparison.Ordinal));
+        }
+    }
+
+    [Theory]
+    [InlineData("gpu", 1920, 1080, 312, 54, 1296, 972)]
+    [InlineData("cpu", 1280, 720, 208, 36, 864, 648)]
+    public void The_film_goes_in_the_tube_and_the_finished_frame_is_the_streams_size(string mode, int width, int height, int x, int y, int tubeW, int tubeH)
+    {
+        var picture = WithCabinet(mode);
+        Assert.Equal((x, y, tubeW, tubeH), (picture.TubeX, picture.TubeY, picture.TubeWidth, picture.TubeHeight));
+        // Even offsets: 4:2:0 video can't start on an odd pixel.
+        Assert.Equal(0, (x % 2) + (y % 2));
+
+        var show = new Segment { Kind = "show", Url = "https://archive.org/download/x/x.mp4" };
+        var film = FfmpegJobs.For(show, Look, 0, 5_000, 0, null, picture)[0];
+        var filter = Arg(film.Args, "-filter_complex");
+        if (mode == "gpu")
+        {
+            Assert.Contains($"w={width}:h={height}", filter, StringComparison.Ordinal);
+            // Its own shape: contain, not a stretch to the tube.
+            Assert.Contains("fit_mode=contain", filter, StringComparison.Ordinal);
+            Assert.Contains($"pos_w=if(eq(in_idx\\,0)\\,{tubeW}\\,{width})", filter, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains($"scale={tubeW}:{tubeH}:force_original_aspect_ratio=decrease", filter, StringComparison.Ordinal);
+            Assert.Contains($"pad={width}:{height}", filter, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Cards_are_tube_sized_and_wrap_to_fit_it()
+    {
+        const string Title = "A REALLY QUITE LONG FILM TITLE OF THIRTY-TWO LETTERS";
+        var job = FfmpegJobs.For(new Segment { Kind = "unknown", Title = Title }, Look, 0, 5_000, 0, null, WithCabinet("gpu"))[0];
+
+        Assert.Contains(job.Args, a => a.Contains("s=1296x972", StringComparison.Ordinal));
+        Assert.Contains("fontsize=60", Arg(job.Args, "-filter_complex"), StringComparison.Ordinal);
+        Assert.All(job.TextFiles.Values.Single().Split('\n'), line => Assert.True(line.Length <= 30, line));
+    }
+
     public static TheoryData<string, HardwareAccelerationType, bool, string, bool, bool> Settings => new()
     {
         { "VA-API on", HardwareAccelerationType.vaapi, true, Device, true, true },

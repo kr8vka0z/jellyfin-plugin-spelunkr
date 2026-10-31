@@ -16,6 +16,9 @@
   <ItemGroup>
     <EmbeddedResource Include="Schedule\engine.js" LogicalName="engine.js" />
     <EmbeddedResource Include="Schedule\schedule.js" LogicalName="schedule.js" />
+    <EmbeddedResource Include="Stream\cabinet-1080.png" LogicalName="cabinet-1080.png" />
+    <EmbeddedResource Include="Stream\cabinet-720.png" LogicalName="cabinet-720.png" />
+    <EmbeddedResource Include="configPage.html" LogicalName="configPage.html" />
   </ItemGroup>
 
   <ItemGroup>
