@@ -47,8 +47,9 @@ A release starts only when the maintainer says so.
   it by the copy-back and never edits it.
 - `manifest-dev.json`: the test feed, on `dev` only, holding just the newest test build. `test-build.yml` writes it.
   The release commit removes it, so it never reaches `main`, and it is ignored when comparing `dev` with `main`.
-- Test builds: `v<live version>-dev.<run>` becomes Jellyfin version `<live version>.<run>`, above live and below
-  the next release (`testVersion` in `tools/release/feed.ts` says why).
+- Test builds: `v<base>-dev.<run>` becomes Jellyfin version `<base>.<run>`, where base is the newest release the
+  built code contains. That is above that release and below the next (`testVersion` in `tools/release/feed.ts`
+  says why). Until a release or hotfix is copied back into `dev`, test builds stay below it, because they lack it.
 - A re-run of an old test build stops itself instead of replacing a newer one in the feed.
 - While `dev`'s `.github/workflows/` differ from `main`'s, GitHub refuses the job's token the new tag, so the test
   build goes red. To recover, take the tag from the failed run, have an account with workflow permission run

@@ -36,8 +36,9 @@ list, add a second repository:
 - Name: `Spelunkr test`
 - URL: `https://raw.githubusercontent.com/kr8vka0z/jellyfin-plugin-spelunkr/dev/manifest-dev.json`
 
-Jellyfin then offers the newest test build as an update to Spelunkr. Install it from the Catalog and restart. When
-a real release comes out it outranks the test build, so you move onto it the same way. To stop, remove that
+Jellyfin then offers the newest test build as an update to Spelunkr, unless a newer real release has just come
+out. Install it from the Catalog and restart. When a real release comes out it outranks the test build, so you move
+onto it the same way. To stop, remove that
 repository; you stay on the test build until the next release.
 
 ## What you'll see
