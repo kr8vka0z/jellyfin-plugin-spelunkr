@@ -2,8 +2,8 @@
 // committed and shipped inside the plugin; run this only to redraw them.
 //   cd tools/check && bun install && cd ../.. && bun tools/cabinet/render.ts
 //
-// One PNG per stream size, drawn fresh rather than scaled: resizing 1080p's fine scanlines to 720p turns them into
-// bands. The numbers marked "Picture" must stay in step with Picture (tube) and CabinetArt (logo plate) in the plugin.
+// One PNG per stream size, drawn fresh rather than scaled, so the slats, dial marks and lettering stay crisp at 720p.
+// Fine repeating lines are what costs the most bitrate, so keep them out of the art: scanlines added 11% to a film. The numbers marked "Picture" must stay in step with Picture (tube) and CabinetArt (logo plate) in the plugin.
 import { resolve } from "node:path";
 import { chromium } from "../check/node_modules/playwright/index.mjs";
 
@@ -20,9 +20,6 @@ function page(height: number) {
   const [hx, hy, hw, hh] = [tx + inset, ty + inset, tw - 2 * inset, th - 2 * inset];
   const hole = `M${hx + r} ${hy}h${hw - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}v${hh - 2 * r}a${r} ${r} 0 0 1 ${-r} ${r}h${-(hw - 2 * r)}a${r} ${r} 0 0 1 ${-r} ${-r}v${-(hh - 2 * r)}a${r} ${r} 0 0 1 ${r} ${-r}z`;
   const frame = `M0 0H${1920 * s}V${height}H0z`;
-  // A whole number of pixels at either size, with the dark line one pixel tall, so nothing beats against the frame.
-  const period = height === 1080 ? 3 : 2;
-  const line = height === 1080 ? 0.2 : 0.14; // the same overall darkening at both sizes
 
   // A real set is lit from above: every metal part goes bright at its top left, and every raised part drops a shadow.
   const metal = `linear-gradient(145deg,#f3e2a8 0%,#c9a65c 28%,#8f6d30 52%,#d8bb74 74%,#7d5e28 100%)`;
@@ -60,8 +57,7 @@ html,body{margin:0;background:transparent}
   background:
     radial-gradient(ellipse 58% 34% at 26% 12%,rgba(255,255,255,.075),transparent 72%),
     linear-gradient(118deg,transparent 34%,rgba(255,255,255,.035) 34.4%,rgba(255,255,255,.035) 45%,transparent 45.4%),
-    radial-gradient(ellipse 74% 74% at 50% 50%,transparent 60%,rgba(0,0,0,.34) 86%,rgba(0,0,0,.66) 100%),
-    repeating-linear-gradient(rgba(0,0,0,${line}) 0,rgba(0,0,0,${line}) 1px,transparent 1px,transparent ${period}px);
+    radial-gradient(ellipse 74% 74% at 50% 50%,transparent 60%,rgba(0,0,0,.34) 86%,rgba(0,0,0,.66) 100%);
   box-shadow:inset 0 0 ${px(26)} ${px(6)} rgba(0,0,0,.62)}
 </style><div class=f>
 <div class=cab>

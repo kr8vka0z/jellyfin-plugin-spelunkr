@@ -72,7 +72,7 @@ continuous TV stream.
   failures 10 min.
 - **The TV cabinet is burned into the video.** Jellyfin has no way to draw over a player on every client, so the
   cabinet is part of the stream and shows the same on anything. The art ships as one PNG per stream size with a
-  see-through tube (drawn by `tools/cabinet/render.ts`; scaling 1080p's scanlines down to 720p makes bands). The tube is 4:3, so an old
+  see-through tube (drawn by `tools/cabinet/render.ts`, fresh at each size so fine detail stays crisp). The tube is 4:3, so an old
   film fills it. `CabinetArt` adds the logo when a stream opens and keeps the result in Jellyfin's data folder, because
   the cache cleaner deletes files over a month old. The image is decoded once per job and looped, which keeps a GPU film
   near 10x playback speed instead of 3x. On a GPU stream every job, cards included, draws the cabinet with the same libplacebo
