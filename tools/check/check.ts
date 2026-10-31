@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createChannel, addChannelVersion, segmentAt } from "../../Jellyfin.Plugin.Spelunkr/Schedule/schedule.js";
 import { readText } from "../oracle/data.ts";
+import { runLive, type Result } from "./live-pool.ts";
 
 // Engine versions the embedded engine.js was extracted from and verified against.
 const SUPPORTED_ENGINES = [5];
@@ -26,15 +27,15 @@ const only = opt("--channel");
 const LIVE_AT_ONCE = 5;
 const repo = resolve(import.meta.dir, "../..");
 
-type Result = { name: string; ok: boolean; details: string };
 const results: Result[] = [];
-async function check(name: string, fn: () => Promise<string>) {
+async function attempt(name: string, fn: () => Promise<string>): Promise<Result> {
   try {
-    results.push({ name, ok: true, details: await fn() });
+    return { name, ok: true, details: await fn() };
   } catch (e) {
-    results.push({ name, ok: false, details: e instanceof Error ? e.message : String(e) });
+    return { name, ok: false, details: e instanceof Error ? e.message : String(e) };
   }
 }
+const check = async (name: string, fn: () => Promise<string>) => results.push(await attempt(name, fn));
 
 // --- data -------------------------------------------------------------------------------------------------
 const problems: string[] = [];
@@ -157,7 +158,7 @@ if (!flag("--skip-live")) {
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({ args: ["--autoplay-policy=no-user-gesture-required"] });
   const liveCheck = (channelId: string) =>
-      check(`live: ${channelId}`, async () => {
+      attempt(`live: ${channelId}`, async () => {
         const channel = createChannel(channelId);
         for (const m of manifests.get(channelId) ?? []) addChannelVersion(channel, m.text, m.platform, JSON.stringify(m.pointer));
         const page = await browser.newPage();
@@ -188,15 +189,7 @@ if (!flag("--skip-live")) {
         }
       });
   try {
-    const waiting = [...channelIds].sort();
-    await Promise.all(Array.from({ length: LIVE_AT_ONCE }, async () => {
-      while (waiting.length) await liveCheck(waiting.shift()!);
-    }));
-    // Pages sharing the machine can start a few seconds late, so a channel only fails if it also fails on its own.
-    for (const r of results.filter((r) => !r.ok && r.name.startsWith("live: "))) {
-      results.splice(results.indexOf(r), 1);
-      await liveCheck(r.name.slice("live: ".length));
-    }
+    results.push(...(await runLive([...channelIds].sort(), LIVE_AT_ONCE, liveCheck)));
   } finally {
     await browser.close();
   }
