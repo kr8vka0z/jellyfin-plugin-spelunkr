@@ -200,12 +200,13 @@ public static class FfmpegJobs
     /// a GPU film from 10x playback speed to 3x, for a picture that never changes.
     /// </summary>
     /// <remarks>
-    /// Both routes pin the cabinet's color handling. Left alone it follows each film's own color tags, and the wood
-    /// visibly changes shade at a join. bt709 is the pinned choice on both, so a CPU fallback matches the GPU too.
+    /// Both routes convert the picture to bt709 and pin the cabinet's color handling. Left alone it follows each
+    /// film's own color tags, and the wood visibly changes shade at a join. The film must be converted, not relabeled,
+    /// or a film in another color space plays with the wrong colors.
     /// </remarks>
     private static string Framed(Picture p, bool gpu, string video, int cabinetInput) => gpu
         ? string.Create(CultureInfo.InvariantCulture, $"{video},hwupload[a];[{cabinetInput}:v]format=rgba,setparams=color_trc=bt709:color_primaries=bt709,hwupload,loop=-1:1:0[b];[a][b]libplacebo=inputs=2:w={p.Width}:h={p.Height}:fps=30:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12:colorspace=bt709:range=tv:color_primaries=bt709:color_trc=bt709:{Place("x", p.TubeX, 0)}:{Place("y", p.TubeY, 0)}:{Place("w", p.TubeWidth, p.Width)}:{Place("h", p.TubeHeight, p.Height)},hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1[v]")
-        : string.Create(CultureInfo.InvariantCulture, $"{video},pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,setparams=colorspace=bt709:range=tv[a];[{cabinetInput}:v]format=yuva420p,loop=-1:1:0[b];[a][b]overlay,format=yuv420p,setsar=1[v]");
+        : string.Create(CultureInfo.InvariantCulture, $"{video},pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,scale=out_color_matrix=bt709:out_range=tv[a];[{cabinetInput}:v]format=yuva420p,loop=-1:1:0[b];[a][b]overlay,format=yuv420p,setsar=1[v]");
 
     // libplacebo's placement for its two inputs: the film (input 0) in the tube, the cabinet (input 1) over the frame.
     private static string Place(string axis, int film, int cabinet) =>

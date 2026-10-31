@@ -127,6 +127,8 @@ public partial class PictureTests
             Assert.DoesNotContain("-vf", job.Args);
             // Pinned, or the wood changes shade with each film's color tags.
             Assert.Contains("bt709", filter, StringComparison.Ordinal);
+            // Converted, never relabeled: setparams only changes the tag, which leaves other color spaces wrong.
+            Assert.DoesNotContain("setparams=colorspace", filter, StringComparison.Ordinal);
         }
     }
 
