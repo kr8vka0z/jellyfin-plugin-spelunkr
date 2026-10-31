@@ -51,7 +51,8 @@ A release starts only when the maintainer says so.
   built code contains. That is above that release and below the next (`testVersion` in `tools/release/feed.ts`
   says why). Until a release or hotfix is copied back into `dev`, test builds stay below it, because they lack it.
 - A re-run of an old test build stops itself instead of replacing a newer one in the feed.
-- Creating or resetting `dev` starts no test build: the job needs a push that changes a file.
+- A branch operation that changes no files starts no test build. Any push that changes a file outside the two
+  manifests starts one, including a reset.
 - While `dev`'s `.github/workflows/` differ from `main`'s, GitHub refuses the job's token the new tag, so the test
   build goes red. To recover, take the tag from the failed run, have an account with workflow permission run
   `gh release create <tag> --prerelease --latest=false --target <commit> --notes "Test build of <commit>."`, then
