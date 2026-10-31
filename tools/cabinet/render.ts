@@ -56,7 +56,6 @@ html,body{margin:0;background:transparent}
 .tube{position:absolute;left:${hx}px;top:${hy}px;width:${hw}px;height:${hh}px;border-radius:${r}px;overflow:hidden;
   background:
     radial-gradient(ellipse 58% 34% at 26% 12%,rgba(255,255,255,.075),transparent 72%),
-    linear-gradient(118deg,transparent 34%,rgba(255,255,255,.035) 34.4%,rgba(255,255,255,.035) 45%,transparent 45.4%),
     radial-gradient(ellipse 74% 74% at 50% 50%,transparent 60%,rgba(0,0,0,.34) 86%,rgba(0,0,0,.66) 100%);
   box-shadow:inset 0 0 ${px(26)} ${px(6)} rgba(0,0,0,.62)}
 </style><div class=f>
