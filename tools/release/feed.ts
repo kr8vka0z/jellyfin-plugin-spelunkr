@@ -52,7 +52,9 @@ export function feedProblems(text: string) {
 if (import.meta.main) {
   const [command, arg] = process.argv.slice(2);
   if (command === "test-version") {
-    const tags = execFileSync("git", ["tag", "--list", "v*", "--sort=-v:refname"], { encoding: "utf8" }).split("\n");
+    // --merged: only releases this code contains. A re-run of old code after a release must stay below it,
+    // and a build from before a hotfix's copy-back must not outrank the fix it lacks.
+    const tags = execFileSync("git", ["tag", "--list", "v*", "--merged", "HEAD", "--sort=-v:refname"], { encoding: "utf8" }).split("\n");
     const { tag, version } = testVersion(tags, Number(arg));
     console.log(`tag=${tag}\nversion=${version}`);
   } else if (command === "fresh") {
