@@ -90,6 +90,13 @@ continuous TV stream.
 - **Pacing:** ffmpeg reads at playback speed after a 10-second head start; the stream may run up to 30 s ahead of
   the clock and skips forward if it falls more than 15 s behind.
 
+## Releases
+
+Two branches, two feeds. `dev` collects work and publishes every push as a test build to `manifest-dev.json`, a
+file only `dev` has. `main` holds `manifest.json`, the feed everyone uses, and only real releases reach it. A
+release is a squash of a `release/vX.Y.Z` branch cut from `dev`, and after it `main` is merged back into `dev`.
+All of it runs from `.github/workflows/release.yml` and `test-build.yml`; `AGENTS.md` has the steps.
+
 ## Gotchas
 
 - Audio-overlay channels (VACATION SLIDES) are left out: the site plays silent films under a playlist of

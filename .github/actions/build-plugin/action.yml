@@ -1,0 +1,60 @@
+# build-plugin: test the plugin and package it as the zip Jellyfin installs. Shared by release.yml and
+# test-build.yml so a test build is packaged exactly like a release.
+name: Build plugin
+description: Test, build and zip the plugin at a given four-part version
+
+inputs:
+  version:
+    description: Four-part Jellyfin version, for example 0.3.4.0
+    required: true
+
+outputs:
+  zip:
+    description: Name of the zip
+    value: ${{ steps.package.outputs.zip }}
+  md5:
+    description: MD5 checksum of the zip
+    value: ${{ steps.package.outputs.md5 }}
+  target-abi:
+    description: The Jellyfin version the zip targets
+    value: ${{ steps.package.outputs.target-abi }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        global-json-file: global.json
+
+    - name: Test and build
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        dotnet test -c Release
+        dotnet publish Jellyfin.Plugin.Spelunkr -c Release -p:Version="$VERSION" -o out
+
+    - name: Package
+      id: package
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        TARGET_ABI: "12.3.0.0"
+      run: |
+        ZIP="jellyfin-plugin-spelunkr_$VERSION.zip"
+        mkdir pkg
+        cp out/Jellyfin.Plugin.Spelunkr.dll out/Jint.dll out/Acornima.dll pkg/
+        # meta.json lets a manually unzipped copy load with the right name and version.
+        jq --arg v "$VERSION" --arg abi "$TARGET_ABI" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          '.[0] | {guid, name, description, overview, owner, category, version: $v, targetAbi: $abi, timestamp: $ts, changelog: "", status: "Active", autoUpdate: true, assemblies: []}' \
+          manifest.json > pkg/meta.json
+        # Python's zipfile, not `zip`: on the runner `zip` exited 0 without writing the file (v0.1.0 run).
+        python3 -m zipfile -c "$ZIP" pkg/*
+        # No pipe, so bash -e stops here if md5sum fails (the step runs without pipefail).
+        md5=$(md5sum "$ZIP")
+        md5="${md5%% *}"
+        {
+          echo "zip=$ZIP"
+          echo "md5=$md5"
+          echo "target-abi=$TARGET_ABI"
+        } >> "$GITHUB_OUTPUT"

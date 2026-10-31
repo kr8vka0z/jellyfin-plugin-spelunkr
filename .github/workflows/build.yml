@@ -1,9 +1,9 @@
-# build.yml: build the plugin and run its tests on every pull request and every push to main.
+# build.yml: build the plugin and run its tests on every pull request and every push to main or dev.
 name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 permissions:
@@ -20,4 +20,6 @@ jobs:
       - run: dotnet build -c Release
       - run: dotnet test -c Release --no-build
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - run: bun test tools/oracle
+      - run: bun test tools/oracle tools/release
+      - name: Keep test builds out of the public feed
+        run: bun tools/release/feed.ts check "${GITHUB_BASE_REF:-$GITHUB_REF_NAME}"

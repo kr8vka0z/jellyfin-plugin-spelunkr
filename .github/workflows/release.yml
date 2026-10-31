@@ -1,76 +1,182 @@
-# release.yml: on a version tag (v0.1.0), build the plugin zip, publish it as a GitHub release, and add the
-# version to manifest.json on main. That file is the plugin repository URL users add to Jellyfin.
+# release.yml: everything from "cut the release" to the version reaching users.
+#   cut (on demand): opens or updates the release PR from dev. Rules: AGENTS.md "Releases".
+#   tag (push to main): when the push is a merged release PR, tags the version, which starts the next job.
+#   release (version tag): builds the zip, publishes the GitHub release, adds the version to manifest.json
+#     on main. That file is the plugin repository URL users add to Jellyfin.
+#   copy-back (after release): merges main into dev as a merge commit.
+# A breakage fix skips cut and tag: the agent pushes the version tag itself after merging.
+#
+# WHY a GitHub App token for cut, tag and copy-back: what GITHUB_TOKEN pushes starts no workflow, so the
+# release PR would have no checks, the tag would start no release, and a hotfix would reach dev unbuilt.
+# No job here runs on a pull request, so pull request code never sees those secrets.
+#
+# WHY an edit here takes effect only after it reaches main: GitHub runs a dispatch from the default
+# branch's copy, which is also why cut names ref: dev.
 name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    tags: ["v*", "!v*-dev*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Force this version (X.Y.Z). Empty = computed. The only way to raise the first number."
+        required: false
+        type: string
 
 permissions:
-  contents: write
-
-env:
-  TARGET_ABI: "12.3.0.0"
+  contents: read
 
 jobs:
-  release:
+  cut:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-cut
+      cancel-in-progress: false
+    steps:
+      - name: Mint a GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          fetch-depth: 0 # every branch and tag: cut.ts compares main, reads the release branch and the cut/* tags
+          token: ${{ steps.app-token.outputs.token }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      # Red when blocked, so a release that didn't happen never looks green.
+      - name: Open or update the release PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          FORCE_VERSION: ${{ inputs.version }}
+        run: bun tools/release/cut.ts
+
+  tag:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - name: Mint a GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          global-json-file: global.json
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+      - name: Tag a merged release PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Asks GitHub which PR this commit came from; a squash title can be reworded. Same-repo only.
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" | jq -r --arg repo "$GITHUB_REPOSITORY" '
+            map(select(.merged_at and .base.ref == "main" and .head.repo.full_name == $repo
+                       and (.head.ref | test("^release/v[0-9]+[.][0-9]+[.][0-9]+$"))))
+            | first | select(.) | "\(.head.ref) \(.head.sha)"')
+          if [ -z "$pr" ]; then
+            echo "Not a release PR: nothing to tag."
+            exit 0
+          fi
+          read -r branch head <<<"$pr"
+          version="${branch#release/}"
+          # cut/vX.Y.Z marks the dev commit that shipped, the parent of the release commit. cut.ts starts
+          # the next notes there.
+          cut=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head" --jq '.parents[0].sha')
+          gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/cut/$version" >/dev/null 2>&1 \
+            || gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/cut/$version" -f "sha=$cut"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$version" -f "sha=$GITHUB_SHA"
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-dev')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
       - name: Work out the version
+        id: version
         env:
           TAG: ${{ github.ref_name }}
         run: |
           v="${TAG#v}"
           # Jellyfin versions have four parts; tags have three.
           case "$v" in *.*.*.*) ;; *) v="$v.0" ;; esac
-          echo "VERSION=$v" >> "$GITHUB_ENV"
-          echo "ZIP=jellyfin-plugin-spelunkr_$v.zip" >> "$GITHUB_ENV"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      - name: Test and build
-        run: |
-          dotnet test -c Release
-          dotnet publish Jellyfin.Plugin.Spelunkr -c Release -p:Version="$VERSION" -o out
-
-      - name: Package
-        run: |
-          mkdir pkg
-          cp out/Jellyfin.Plugin.Spelunkr.dll out/Jint.dll out/Acornima.dll pkg/
-          # meta.json lets a manually unzipped copy load with the right name and version.
-          jq --arg v "$VERSION" --arg abi "$TARGET_ABI" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '.[0] | {guid, name, description, overview, owner, category, version: $v, targetAbi: $abi, timestamp: $ts, changelog: "", status: "Active", autoUpdate: true, assemblies: []}' \
-            manifest.json > pkg/meta.json
-          # Python's zipfile, not `zip`: on the runner `zip` exited 0 without writing the file (v0.1.0 run).
-          python3 -m zipfile -c "$ZIP" pkg/*
-          # No pipe, so bash -e stops here if md5sum fails (the step runs without pipefail).
-          md5=$(md5sum "$ZIP")
-          md5="${md5%% *}"
-          echo "MD5=$md5" >> "$GITHUB_ENV"
+      - name: Test and package
+        id: build
+        uses: ./.github/actions/build-plugin
+        with:
+          version: ${{ steps.version.outputs.version }}
 
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" "$ZIP" --title "$TAG" --generate-notes
+          ZIP: ${{ steps.build.outputs.zip }}
+        run: |
+          # Named, or GitHub may start the notes at a -dev tag.
+          last=$(gh release list --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')
+          gh release create "$TAG" "$ZIP" --title "$TAG" --latest --generate-notes ${last:+--notes-start-tag "$last"}
 
       - name: Add the version to manifest.json on main
         env:
           TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ZIP: ${{ steps.build.outputs.zip }}
+          MD5: ${{ steps.build.outputs.md5 }}
+          ABI: ${{ steps.build.outputs.target-abi }}
         run: |
           git fetch --depth 1 origin main
           git checkout -B main origin/main
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ZIP}"
-          jq --arg v "$VERSION" --arg abi "$TARGET_ABI" --arg url "$url" --arg md5 "$MD5" \
+          jq --arg v "$VERSION" --arg abi "$ABI" --arg url "$url" --arg md5 "$MD5" \
              --arg log "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" \
              --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
              '.[0].versions = [{version: $v, changelog: $log, targetAbi: $abi, sourceUrl: $url, checksum: $md5, timestamp: $ts}] + .[0].versions' \
              manifest.json > manifest.tmp
           mv manifest.tmp manifest.json
+          bun tools/release/feed.ts check main
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "chore: release $VERSION"
           git push origin main
+
+  copy-back:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint a GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # a real merge needs the shared history
+          token: ${{ steps.app-token.outputs.token }}
+      - name: Merge main into dev
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git ls-remote --exit-code origin refs/heads/dev >/dev/null || { echo "No dev branch yet."; exit 0; }
+          git config user.name "kr8vka0z-release-bot"
+          git config user.email "kr8vka0z-release-bot@users.noreply.github.com"
+          # A merge, never a squash: it makes main an ancestor of dev, which the next cut requires.
+          # main adds nothing but its manifest.json and any hotfix; dev's manifest-dev.json is on one side only.
+          for attempt in 1 2 3; do
+            git fetch origin main dev
+            git checkout -B dev origin/dev
+            if ! git merge --no-ff --no-edit -m "chore: copy main back into dev after $TAG" origin/main; then
+              git merge --abort
+              echo "::error::main does not merge cleanly into dev. Copy it back by hand; the next cut is blocked until then."
+              exit 1
+            fi
+            git push origin dev && exit 0
+            sleep 5
+          done
+          exit 1
