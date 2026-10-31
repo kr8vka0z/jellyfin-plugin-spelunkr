@@ -4,10 +4,10 @@
 //   data:    lineup, manifests and platform files of every channel the plugin offers (or just --channel) still
 //            have every field the plugin reads, with the right types
 //   engine:  lineup "engine" is still a number the embedded engine.js supports
-//   extract: the live spelunkr.tv bundle still yields byte-for-byte the embedded engine.js
-//   live:    for 3 channels a day (rotating through all of them, or just --channel), a headless browser on
-//            spelunkr.tv/<channel> plays the same archive.org file, at the same moment (within 10 s), as the
-//            embedded engine says should be on
+//   extract: the engine can still be cut from the live spelunkr.tv bundle. Different code is only a note, not a
+//            failure: every alarm so far was a rebuild with the schedule unchanged, and "live" decides that
+//   live:    for every channel (or just --channel), a headless browser on spelunkr.tv/<channel> plays the same
+//            archive.org file, at the same moment (within 10 s), as the embedded engine says should be on
 import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -22,7 +22,8 @@ const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(name);
 const opt = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const only = opt("--channel");
-const LIVE_PER_DAY = 3;
+// Pages open at once. Each can take 5 minutes, so one at a time would take hours when channels sit on long bumps.
+const LIVE_AT_ONCE = 5;
 const repo = resolve(import.meta.dir, "../..");
 
 type Result = { name: string; ok: boolean; details: string };
@@ -145,23 +146,18 @@ await check("extract", async () => {
   const embedded = join(repo, "Jellyfin.Plugin.Spelunkr/Schedule/engine.js");
   if (readFileSync(out, "utf8") === readFileSync(embedded, "utf8")) return "live bundle yields the embedded engine.js";
   const diff = Bun.spawnSync(["diff", "-u", embedded, out]).stdout.toString();
-  throw new Error(
-    "spelunkr.tv's engine code differs from the embedded copy. This can be a harmless rebuild that only renamed " +
-      "minified names; the live check below says whether the schedule actually changed.\n```diff\n" + diff.slice(0, 6000) + "\n```",
+  return (
+    "NOTE: spelunkr.tv's engine code differs from the embedded copy. Not a failure on its own: the live check below " +
+    "says whether the schedule actually changed.\n```diff\n" + diff.slice(0, 6000) + "\n```"
   );
 });
 
 // --- live -------------------------------------------------------------------------------------------------
-// Today's sample: LIVE_PER_DAY channels, moving along the sorted list each day so every channel is seen in turn.
-const day = Math.floor(Date.now() / 864e5);
-const sorted = [...channelIds].sort();
-const sample = only ? [only] : Array.from({ length: Math.min(LIVE_PER_DAY, sorted.length) }, (_, i) => sorted[(day * LIVE_PER_DAY + i) % sorted.length]);
 if (!flag("--skip-live")) {
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({ args: ["--autoplay-policy=no-user-gesture-required"] });
-  try {
-    for (const channelId of sample) {
-      await check(`live: ${channelId}`, async () => {
+  const liveCheck = (channelId: string) =>
+      check(`live: ${channelId}`, async () => {
         const channel = createChannel(channelId);
         for (const m of manifests.get(channelId) ?? []) addChannelVersion(channel, m.text, m.platform, JSON.stringify(m.pointer));
         const page = await browser.newPage();
@@ -191,6 +187,15 @@ if (!flag("--skip-live")) {
           await page.close();
         }
       });
+  try {
+    const waiting = [...channelIds].sort();
+    await Promise.all(Array.from({ length: LIVE_AT_ONCE }, async () => {
+      while (waiting.length) await liveCheck(waiting.shift()!);
+    }));
+    // Pages sharing the machine can start a few seconds late, so a channel only fails if it also fails on its own.
+    for (const r of results.filter((r) => !r.ok && r.name.startsWith("live: "))) {
+      results.splice(results.indexOf(r), 1);
+      await liveCheck(r.name.slice("live: ".length));
     }
   } finally {
     await browser.close();
@@ -200,7 +205,7 @@ if (!flag("--skip-live")) {
 if (flag("--simulate-break")) results.push({ name: "simulated break", ok: false, details: "forced failure (workflow input simulate_break) to prove the issue path" });
 
 const report = [
-  `Spelunkr check, ${new Date().toISOString()}: data for ${channelIds.length} channels, live sample ${sample.join(", ")}`,
+  `Spelunkr check, ${new Date().toISOString()}: data and live for ${channelIds.length} channels`,
   "",
   ...results.map((r) => `### ${r.ok ? "PASS" : "FAIL"}: ${r.name}\n\n${r.details}\n`),
 ].join("\n");

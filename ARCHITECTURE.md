@@ -110,5 +110,5 @@ continuous TV stream.
   folder when its transcoding service first starts, which killed a stream opened right after a restart.
 - At each join between segments the audio overlaps by a few tens of milliseconds (AAC encoder start-up);
   players drop the extra packets. Video has no overlap because B-frames are off.
-- The daily check (`tools/check`) flags any change in the extracted engine code, including a rebuild that only
-  renamed minified names. The "live" check says whether the schedule really changed.
+- The daily check (`tools/check`) only notes a change in the extracted engine code, because a rebuild that only
+  renames minified names changes nothing. The "live" check, on every channel, decides whether the plugin is broken.
