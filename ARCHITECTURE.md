@@ -92,8 +92,8 @@ continuous TV stream.
 
 ## Releases
 
-Two branches, two feeds. `dev` collects work and publishes every push as a test build to `manifest-dev.json`, a
-file only `dev` has. `main` holds `manifest.json`, the feed everyone uses, and only real releases reach it. A
+Two branches, two feeds. `dev` collects work and publishes each push as a test build to `manifest-dev.json`, a
+file only `dev` has (a push that changes workflow files needs a manual step, see `AGENTS.md`). `main` holds `manifest.json`, the feed everyone uses, and only real releases reach it. A
 release is a squash of a `release/vX.Y.Z` branch cut from `dev`, and after it `main` is merged back into `dev`.
 All of it runs from `.github/workflows/release.yml` and `test-build.yml`; `AGENTS.md` has the steps.
 

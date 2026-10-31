@@ -9,7 +9,7 @@
 // the dev commit that really shipped, so a cut that never merged stays in the next notes.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { newestStable } from "./feed.ts";
+import { isAbove, newestStable } from "./feed.ts";
 
 // dev alone has this feed file. It must never count as a change or reach main.
 const NOT_FEED = [".", ":!manifest-dev.json"];
@@ -31,7 +31,7 @@ const branchVersion = (pr: Pr) => /^release\/v(\d+\.\d+\.\d+)$/.exec(pr.headRefN
 
 /**
  * Pure decision. `changed` = dev and main hold different files, feed file aside. `movedSinceCut` = dev's
- * code differs from the open PR's cut. `versionIsLive` = the open PR's or forced version already has a tag.
+ * code differs from the open PR's cut. `latest` = the newest live version.
  */
 export function decideCut(input: {
   changed: boolean;
@@ -39,9 +39,9 @@ export function decideCut(input: {
   mainInDev: boolean;
   movedSinceCut: boolean;
   forcedVersion: string;
-  versionIsLive: boolean;
+  latest: string;
 }): { action: "nothing" | "same" | "new" | "update" | "blocked"; message: string; version?: string; prNumber?: number } {
-  const { changed, prs, mainInDev, movedSinceCut, forcedVersion, versionIsLive } = input;
+  const { changed, prs, mainInDev, movedSinceCut, forcedVersion, latest } = input;
   const blocked = (reason: string) => ({ action: "blocked" as const, message: `Release NOT cut: ${reason}` });
   if (prs.length > 1) return blocked(`only one release PR may be open, found ${prs.map((p) => p.url).join(" ")}. Close the extra ones.`);
   const [pr] = prs;
@@ -58,8 +58,10 @@ export function decideCut(input: {
   if (pr && forcedVersion && forcedVersion !== version) {
     return blocked(`${pr.url} is open at v${version}, not v${forcedVersion}. Close it to use another version.`);
   }
-  // A hotfix can take the same number while the PR is open.
-  if (versionIsLive) return blocked(`v${version} is already live.${pr ? ` Close ${pr.url} and cut again.` : ""}`);
+  // A hotfix can pass the number while the PR is open, and Jellyfin never moves anyone to a lower version.
+  if (version && !isAbove(version, latest)) {
+    return blocked(`v${version} is not above live v${latest}.${pr ? ` Close ${pr.url} and cut again.` : ""}`);
+  }
   if (!pr) return { action: "new", version: forcedVersion, message: "Cutting a new release." };
   if (!movedSinceCut) return { action: "same", version, prNumber: pr.number, message: `Nothing new since the last cut: ${pr.url}` };
   return { action: "update", version, prNumber: pr.number, message: `Updating ${pr.url} in place at v${version}.` };
@@ -146,14 +148,15 @@ function main() {
   const prs: Pr[] = JSON.parse(sh("gh", ["pr", "list", "--base", "main", "--state", "open", "--limit", "100", "--json", "number,url,headRefName,isCrossRepository"]))
     .filter((p: Pr & { isCrossRepository: boolean }) => p.headRefName.startsWith("release/") && !p.isCrossRepository);
   const forcedVersion = process.env.FORCE_VERSION ?? "";
-  const taken = prs.length === 1 ? branchVersion(prs[0]) : forcedVersion;
+  const latest = newestStable(git("tag", "--list", "v*", "--sort=-v:refname").split("\n"));
+  if (!latest) refuse("Release NOT cut: no earlier release tag found.");
   const d = decideCut({
     changed: !sameFiles("origin/main", "HEAD"),
     prs,
     mainInDev: git("merge-base", "origin/main", "HEAD") === git("rev-parse", "origin/main"),
     movedSinceCut: prs.length === 1 && !sameFiles(git("merge-base", "HEAD", `origin/${prs[0].headRefName}`), "HEAD"),
     forcedVersion,
-    versionIsLive: Boolean(taken && git("tag", "--list", `v${taken}`)),
+    latest,
   });
 
   say(d.message);
@@ -166,10 +169,7 @@ function main() {
   const changes = changeList(merged, shas);
   if (!changes.length) refuse("Release NOT cut: dev and main hold different files but no PR is listed since the last release. Compare them with git diff.");
 
-  const tags = git("tag", "--list", "v*", "--sort=-v:refname").split("\n");
-  const last = newestStable(tags);
-  if (!last) refuse("Release NOT cut: no earlier release tag found.");
-  const version = d.version || nextVersion(last, changes.map((c) => c.title));
+  const version = d.version || nextVersion(latest, changes.map((c) => c.title));
   const repo = sh("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
   const bodyText = releaseBody({
     changes,

@@ -2,16 +2,10 @@
 // the public feed. bun test tools/release
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { feedProblems, newestStable, testVersion } from "./feed.ts";
+import { feedProblems, isAbove as above, isSuperseded, newestStable, testVersion } from "./feed.ts";
 
 const manifest = (...entries: [string, string][]) =>
   JSON.stringify([{ versions: entries.map(([version, sourceUrl]) => ({ version, sourceUrl })) }]);
-// Jellyfin's System.Version order, part by part.
-const above = (a: string, b: string) => {
-  const [x, y] = [a, b].map((v) => v.split(".").map(Number));
-  const i = x.findIndex((n, k) => n !== y[k]);
-  return i >= 0 && x[i] > y[i];
-};
 
 test("a test build sits above live and below the next release", () => {
   const { tag, version } = testVersion(["v0.3.4-dev.9", "v0.3.4", "v0.3.3"], 12);
@@ -33,6 +27,16 @@ test("-dev tags are never the live version", () => {
   expect(newestStable(["v0.3.5-dev.2", "v0.3.4"])).toBe("0.3.4");
 });
 
+test("a re-run of an old build can't replace a newer one in the test feed", () => {
+  const feed = manifest(["0.3.4.12", "https://x/p.zip"]);
+  expect(isSuperseded(feed, 7)).toBe(true);
+  expect(isSuperseded(feed, 12)).toBe(false); // re-running the newest build is fine
+  expect(isSuperseded(feed, 13)).toBe(false);
+  expect(isSuperseded("", 1)).toBe(false);
+  // After a release, an old run's version would look newer. The run number still decides.
+  expect(isSuperseded(manifest(["0.3.4.12", "https://x/p.zip"]), Number(testVersion(["v0.3.5"], 7).version.split(".")[3]))).toBe(true);
+});
+
 test("the public feed refuses test builds", () => {
   expect(feedProblems(manifest(["0.3.4.0", "https://x/v0.3.4/p_0.3.4.0.zip"]))).toEqual([]);
   expect(feedProblems(manifest(["0.3.4.7", "https://x/v0.3.4-dev.7/p.zip"]))).toHaveLength(1);
@@ -48,6 +52,7 @@ test("the test build workflow can only write the dev feed", () => {
   const yml = readFileSync(".github/workflows/test-build.yml", "utf8");
   expect(yml).toContain("branches: [dev]");
   expect(yml).toContain("> manifest-dev.json");
+  expect(yml.match(/feed\.ts fresh/g)).toHaveLength(2); // before anything is published, and on the current feed
   expect(yml).not.toMatch(/>\s*manifest\.json/);
   const pushes = yml.split("\n").filter((l) => l.includes("git push"));
   expect(pushes.length).toBeGreaterThan(0);

@@ -4,6 +4,9 @@
 #
 # Version scheme: see testVersion in tools/release/feed.ts.
 #
+# Known limit: GitHub refuses GITHUB_TOKEN a new tag on a commit whose workflow files differ from main's, so
+# a dev push that changes .github/workflows/ fails here until the recovery in AGENTS.md is done.
+#
 # WHY it can't loop: a push made with GITHUB_TOKEN starts no workflow, and paths-ignore covers the rest.
 # manifest.json is ignored too so the copy-back of a release, which only brings main's feed, builds nothing.
 name: Test build
@@ -31,6 +34,15 @@ jobs:
           fetch-depth: 0 # every tag: the version is built on the newest real release
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
+      # WHY: a re-run keeps its old commit, so re-running an old build would put old code in the feed.
+      - name: Stop if a later build is already in the feed
+        env:
+          RUN: ${{ github.run_number }}
+        run: |
+          git fetch origin dev
+          git show origin/dev:manifest-dev.json > "$RUNNER_TEMP/feed.json" 2>/dev/null || true
+          bun tools/release/feed.ts fresh "$RUN" "$RUNNER_TEMP/feed.json"
+
       - name: Work out the version
         id: version
         env:
@@ -48,7 +60,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
           ZIP: ${{ steps.build.outputs.zip }}
-        # A re-run keeps its run number, so it replaces the zip in the release it already made.
+        # A re-run keeps its run number, so it replaces the zip in the release it already made. That is also
+        # how a build recovers when GitHub refuses the tag: see "Test builds" under The two feeds in AGENTS.md.
         # ponytail: test releases pile up. The feed lists only the newest; delete old ones by hand if they bother.
         run: |
           gh release create "$TAG" "$ZIP" --prerelease --latest=false --target "$GITHUB_SHA" --title "$TAG" \
@@ -57,6 +70,7 @@ jobs:
 
       - name: Update the test feed
         env:
+          RUN: ${{ github.run_number }}
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
           ZIP: ${{ steps.build.outputs.zip }}
@@ -65,6 +79,7 @@ jobs:
         run: |
           git fetch origin dev
           git checkout -B dev origin/dev
+          bun tools/release/feed.ts fresh "$RUN" manifest-dev.json
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ZIP}"
           jq --arg v "$VERSION" --arg abi "$ABI" --arg url "$url" --arg md5 "$MD5" \
              --arg log "https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}" \
@@ -75,7 +90,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add manifest-dev.json
           git commit -m "chore: test build $VERSION"
-          # Guard: the commit holds the test feed and nothing else.
+          # Guard: the commit holds the test feed and nothing else. A newer feed landing meanwhile makes the
+          # rebase below conflict, which stops the job rather than overwriting it.
           [ "$(git diff --name-only HEAD~1 HEAD)" = manifest-dev.json ]
           for attempt in 1 2 3; do
             git push origin dev && exit 0

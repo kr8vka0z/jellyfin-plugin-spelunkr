@@ -23,7 +23,7 @@
 
 ## Branches
 
-New work: branch from `dev`, PR into `dev`. Each push to `dev` makes a test build. Only three things reach `main`:
+New work: branch from `dev`, PR into `dev`. Each push to `dev` makes a test build (one exception under The two feeds). Only three things reach `main`:
 a release PR, a breakage fix, and the bots' own feed commits. Never PR `dev` itself into `main`.
 
 ## Releases
@@ -49,6 +49,11 @@ A release starts only when the maintainer says so.
   The release commit removes it, so it never reaches `main`, and it is ignored when comparing `dev` with `main`.
 - Test builds: `v<live version>-dev.<run>` becomes Jellyfin version `<live version>.<run>`, above live and below
   the next release (`testVersion` in `tools/release/feed.ts` says why).
+- A re-run of an old test build stops itself instead of replacing a newer one in the feed.
+- While `dev`'s `.github/workflows/` differ from `main`'s, GitHub refuses the job's token the new tag, so the test
+  build goes red. To recover, take the tag from the failed run, have an account with workflow permission run
+  `gh release create <tag> --prerelease --latest=false --target <commit> --notes "Test build of <commit>."`, then
+  re-run the job: it uploads the zip to that release and updates the feed.
 - `tools/release/feed.ts check` runs in CI and before the release job's push. Keep it passing.
 
 ## Undoing a release

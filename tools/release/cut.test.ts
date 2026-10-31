@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { changeList, decideCut, isMaintenanceOnly, nextVersion, releaseBody, testBuildLine } from "./cut.ts";
 
 const pr = (v: string, number = 7) => ({ number, url: `https://x/${number}`, headRefName: `release/v${v}` });
-const base = { changed: true, prs: [], mainInDev: true, movedSinceCut: false, forcedVersion: "", versionIsLive: false };
+const base = { changed: true, prs: [], mainInDev: true, movedSinceCut: false, forcedVersion: "", latest: "0.3.4" };
 
 test("versions stay 0.x: a feature raises the middle, anything else the last", () => {
   expect(nextVersion("0.3.4", ["fix: a", "feat(guide): b"])).toBe("0.4.0");
@@ -18,7 +18,11 @@ test.each([
   ["recut after dev moved", { prs: [pr("0.3.5")], movedSinceCut: true }, "update"],
   ["main ahead of dev", { mainInDev: false }, "blocked"],
   ["two release PRs", { prs: [pr("0.3.5"), pr("0.3.6", 8)] }, "blocked"],
-  ["a hotfix took the version", { prs: [pr("0.3.5")], movedSinceCut: true, versionIsLive: true }, "blocked"],
+  ["a hotfix took the version", { prs: [pr("0.3.5")], movedSinceCut: true, latest: "0.3.5" }, "blocked"],
+  ["a hotfix passed the version", { prs: [pr("0.3.5")], latest: "0.3.6" }, "blocked"],
+  ["forced version already live", { forcedVersion: "0.3.4" }, "blocked"],
+  ["forced version below live", { forcedVersion: "0.2.0" }, "blocked"],
+  ["forced version above live", { forcedVersion: "1.0.0" }, "new"],
   ["forced version differs from the open PR", { prs: [pr("0.3.5")], forcedVersion: "0.4.0" }, "blocked"],
   ["forced version is not X.Y.Z", { forcedVersion: "1.0" }, "blocked"],
 ])("%s", (_name, over, action) => {

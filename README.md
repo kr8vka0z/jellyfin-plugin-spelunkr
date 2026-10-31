@@ -69,7 +69,7 @@ consider donating to them.
 - Build and test: `dotnet test` (needs the .NET 10 SDK)
 - Plugin build: `dotnet publish Jellyfin.Plugin.Spelunkr -c Release -o artifacts/plugin`, then copy
   `Jellyfin.Plugin.Spelunkr.dll`, `Jint.dll` and `Acornima.dll` into a plugin folder as above
-- Contributing: PRs go into `dev`. Every push there publishes a test build
+- Contributing: PRs go into `dev`. Each push there publishes a test build, unless it needs the workflow-change step in [AGENTS.md](./AGENTS.md)
 - Release: the release job opens a release PR from `dev`, and merging it publishes the version and updates
   `manifest.json`. Steps in [AGENTS.md](./AGENTS.md)
 - How it works and why: [ARCHITECTURE.md](./ARCHITECTURE.md). Notes for AI coding agents: [AGENTS.md](./AGENTS.md)
