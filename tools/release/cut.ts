@@ -15,7 +15,7 @@ import { newestStable } from "./feed.ts";
 const NOT_FEED = [".", ":!manifest-dev.json"];
 
 type Pr = { number: number; url: string; headRefName: string };
-type Merged = { number: number; title: string; headRefName: string; mergeCommit?: { oid: string } | null };
+type Merged = { number: number; title: string; mergeCommit?: { oid: string } | null };
 
 /** Only tests, tools, CI and docs differ, so nobody watching a channel should notice. */
 export const isMaintenanceOnly = (files: string[]) =>
@@ -162,7 +162,7 @@ function main() {
 
   const cutSha = git("rev-parse", "HEAD");
   const shas = new Set(git("rev-list", "--first-parent", `${notesStart()}..HEAD`).split("\n"));
-  const merged: Merged[] = JSON.parse(sh("gh", ["pr", "list", "--base", "dev", "--state", "merged", "--limit", "300", "--json", "number,title,headRefName,mergeCommit"]));
+  const merged: Merged[] = JSON.parse(sh("gh", ["pr", "list", "--base", "dev", "--state", "merged", "--limit", "300", "--json", "number,title,mergeCommit"]));
   const changes = changeList(merged, shas);
   if (!changes.length) refuse("Release NOT cut: dev and main hold different files but no PR is listed since the last release. Compare them with git diff.");
 

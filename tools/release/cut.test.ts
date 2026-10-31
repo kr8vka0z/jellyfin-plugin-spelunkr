@@ -38,16 +38,16 @@ test("maintenance only is judged on files that ship", () => {
 
 test("notes list only PRs in the release", () => {
   const merged = [
-    { number: 1, title: "a", headRefName: "x", mergeCommit: { oid: "s1" } },
-    { number: 2, title: "b", headRefName: "y", mergeCommit: { oid: "s2" } },
-    { number: 3, title: "c", headRefName: "z", mergeCommit: null },
+    { number: 1, title: "a", mergeCommit: { oid: "s1" } },
+    { number: 2, title: "b", mergeCommit: { oid: "s2" } },
+    { number: 3, title: "c", mergeCommit: null },
   ];
   expect(changeList(merged, new Set(["s2"])).map((p) => p.number)).toEqual([2]);
 });
 
 test("the first page holds what the standard asks for", () => {
   const body = releaseBody({
-    changes: [{ number: 4, title: "feat(guide): add posters", headRefName: "x" }],
+    changes: [{ number: 4, title: "feat(guide): add posters" }],
     maintenance: false,
     repo: "o/r",
     cutSha: "abcdef1234",
