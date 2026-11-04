@@ -13,8 +13,8 @@ namespace Jellyfin.Plugin.Spelunkr;
 /// <summary>Spelunkr's data plus the schedule engine, shared by the tuner and the guide.</summary>
 public sealed partial class SpelunkrSource
 {
-    /// <summary>Spelunkr's public storage bucket (no login needed).</summary>
-    public const string Bucket = "https://jbuopkuluyfjwgsrigry.supabase.co/storage/v1/object/public/broadcast/";
+    /// <summary>Spelunkr's public data host (no login needed); the site reads the same one.</summary>
+    public const string Bucket = "https://data.spelunkr.tv/";
 
 
     // Versions change every few days and a new one is listed ahead of when it takes over, so hourly is plenty.
