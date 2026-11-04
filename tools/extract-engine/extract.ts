@@ -53,13 +53,14 @@ function once(label: string, re: RegExp): RegExpExecArray {
   return all[0] as RegExpExecArray;
 }
 
+// Identifiers are [\w$]+, not \w+: minifiers use `$` in names (e.g. `$s`), and \w does not match it.
 // Slice 1: constants, RNG, bump/ad planners, version registry, cycle builder, lookup (Qt) and walker (to).
-const start1 = once("slide-timing constants", /const \w+=2500,\w+=1500,\w+=55,(\w+)=300,\w+=2e3,(\w+)=3500,(\w+)=1e3,/);
-const walker = once("schedule walker", /function\*(\w+)\(e,t\)\{let n=t;for\(;;\)\{const r=(\w+)\(e,n\);yield r,n=r\.endMs\}\}/);
+const start1 = once("slide-timing constants", /const [\w$]+=2500,[\w$]+=1500,[\w$]+=55,([\w$]+)=300,[\w$]+=2e3,([\w$]+)=3500,([\w$]+)=1e3,/);
+const walker = once("schedule walker", /function\*([\w$]+)\(e,t\)\{let n=t;for\(;;\)\{const r=([\w$]+)\(e,n\);yield r,n=r\.endMs\}\}/);
 // Slice 2: archive.org download URL.
-const url = once("archive.org url", /function (\w+)\(e,t\)\{return`https:\/\/archive\.org\/download\/\$\{e\}\/\$\{encodeURIComponent\(t\)\}`\}/);
+const url = once("archive.org url", /function ([\w$]+)\(e,t\)\{return`https:\/\/archive\.org\/download\/\$\{e\}\/\$\{encodeURIComponent\(t\)\}`\}/);
 // Slice 3: manifest + platform + lineup pointer -> version object.
-const build = once("version builder", /function (\w+)\(e,t,n\)\{const r=e\.bumps\|\|\[\],s=\(t==null\?void 0:t\.bumps\)\|\|\[\];/);
+const build = once("version builder", /function ([\w$]+)\(e,t,n\)\{const r=e\.bumps\|\|\[\],s=\(t==null\?void 0:t\.bumps\)\|\|\[\];/);
 const buildEnd = src.indexOf("engine:e.engine}}", build.index);
 if (buildEnd < 0) fail(`version builder end "engine:e.engine}}" not found`);
 
@@ -75,8 +76,8 @@ const inSlice1 = (label: string, re: RegExp) => {
   if (!m) fail(`anchor "${label}" not found in slice 1: ${re.source}`);
   return m;
 };
-const registry = inSlice1("registry", /function (\w+)\(e,t=\[\]\)\{const n=\{channelId:e,versions:\[\]\};for\(const r of t\)(\w+)\(n,r\);return n\}/);
-const slideMs = inSlice1("slide length", /function (\w+)\(e\)\{return Math\.max\(\w+,\w+\+e\.length\*\w+\)\}const (\w+)=1e3,/);
+const registry = inSlice1("registry", /function ([\w$]+)\(e,t=\[\]\)\{const n=\{channelId:e,versions:\[\]\};for\(const r of t\)([\w$]+)\(n,r\);return n\}/);
+const slideMs = inSlice1("slide length", /function ([\w$]+)\(e\)\{return Math\.max\([\w$]+,[\w$]+\+e\.length\*[\w$]+\)\}const ([\w$]+)=1e3,/);
 
 const [, gapName, leadInName, tailAName] = start1;
 const names = {

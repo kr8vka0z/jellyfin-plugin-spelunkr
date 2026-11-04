@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 
-export const BUCKET = "https://jbuopkuluyfjwgsrigry.supabase.co/storage/v1/object/public/broadcast/";
+export const BUCKET = "https://data.spelunkr.tv/";
 
 /**
  * Paths come from Spelunkr's own data (manifest and platform names), so treat them as untrusted: only plain

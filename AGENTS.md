@@ -19,7 +19,7 @@
 - Public repo: no server paths, hostnames, IPs or personal details anywhere.
 - Build against the Jellyfin version in the csproj (`Jellyfin.Controller` 12.3.0); `TARGET_ABI` in `.github/actions/build-plugin/action.yml` must match.
 - Which channels are offered: `SpelunkrSource.IsOffered` (mirrored in `tools/check/check.ts`; keep them the same).
-- `bun test tools/oracle tools/release` runs the Bun-side tests (path safety, release decisions, the feed guard).
+- `bun test tools/oracle tools/release tools/extract-engine` runs the Bun-side tests (path safety, release decisions, the feed guard, extractor anchors).
 
 ## Branches
 
