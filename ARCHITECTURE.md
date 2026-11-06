@@ -97,8 +97,8 @@ continuous TV stream.
   with the film's title and year, or "UP NEXT" with the next film's during bumps, ads and cards (found by stepping
   through the schedule from the segment's end). The words are drawn with drawtext onto the cabinet's one decoded frame
   before it is looped, glow included (a blurred copy), so they cost nothing per frame, and the GPU job and its CPU
-  twin place them from the same numbers. Titles wrap by measured glyph widths of the serif font and stop at four
-  lines with "…". If the next film can't be found the window stays empty.
+  twin place them from the same numbers. Titles wrap by measured glyph widths of the serif font (shrinking a little when one
+  word is too wide) and stop at four lines with "…". If the next film can't be found the window stays empty.
 - **GPU picture follows Jellyfin's own setting.** When Jellyfin's hardware acceleration is
   VA-API with hardware encoding on and Jellyfin found Vulkan works on the device, films are lightly denoised on the
   CPU, then upscaled to 1080p with libplacebo (ewa_lanczossharp, debanding) and encoded with h264_vaapi. Bumps,
