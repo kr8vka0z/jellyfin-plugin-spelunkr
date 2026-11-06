@@ -3,7 +3,8 @@
 //   cd tools/check && bun install && cd ../.. && bun tools/cabinet/render.ts
 //
 // One PNG per stream size, drawn fresh rather than scaled, so the slats, dial marks and lettering stay crisp at 720p.
-// Fine repeating lines are what costs the most bitrate, so keep them out of the art: scanlines added 11% to a film. The numbers marked "Picture" must stay in step with Picture (tube) and CabinetArt (logo plate) in the plugin.
+// Fine repeating lines are what costs the most bitrate, so keep them out of the art: scanlines added 11% to a film. The numbers marked "Picture" must stay in step with Picture (tube, now-playing window) and CabinetArt (logo plate) in the plugin.
+// The now-playing window (.np) is drawn empty: its words change with the schedule, so ffmpeg writes them per job (NowPlaying).
 import { resolve } from "node:path";
 import { chromium } from "../check/node_modules/playwright/index.mjs";
 
@@ -19,6 +20,8 @@ function page(height: number) {
   const r = 62 * s;
   const [hx, hy, hw, hh] = [tx + inset, ty + inset, tw - 2 * inset, th - 2 * inset];
   const hole = `M${hx + r} ${hy}h${hw - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}v${hh - 2 * r}a${r} ${r} 0 0 1 ${-r} ${r}h${-(hw - 2 * r)}a${r} ${r} 0 0 1 ${-r} ${-r}v${-(hh - 2 * r)}a${r} ${r} 0 0 1 ${r} ${-r}z`;
+  // Picture: the now-playing window (left, top, width, height) and its rim. ffmpeg writes the words inside it.
+  const [nx, ny, nw, nh, rim] = [52, 432, 174, 206, 4];
   const frame = `M0 0H${1920 * s}V${height}H0z`;
 
   // A real set is lit from above: every metal part goes bright at its top left, and every raised part drops a shadow.
@@ -47,7 +50,9 @@ html,body{margin:0;background:transparent}
 .grille{position:absolute;left:${px(52)};width:${px(174)};top:${px(424)};height:${px(558)};border-radius:${px(5)};background:#0a0604;box-shadow:0 0 0 ${px(3)} #2b1608,0 ${px(1)} 0 ${px(4)} rgba(255,214,160,.2),inset 0 ${px(6)} ${px(8)} #000}
 .grille:before{content:"";position:absolute;inset:${px(5)};background:repeating-linear-gradient(180deg,#8a5a2d 0,#6b4220 ${px(4)},#3c2210 ${px(9)},#0a0503 ${px(10)},#0a0503 ${px(17)})}
 .grille:after{content:"";position:absolute;inset:${px(5)};background:linear-gradient(90deg,rgba(0,0,0,.55),transparent 16%,transparent 84%,rgba(0,0,0,.55)),linear-gradient(180deg,rgba(0,0,0,.5),transparent 12%,transparent 80%,rgba(0,0,0,.5))}
+.g1{top:${px(676)};height:${px(306)}}
 .g2{left:${px(1677)};top:${px(676)};height:${px(306)}}
+.np{position:absolute;left:${px(nx)};width:${px(nw)};top:${px(ny)};height:${px(nh)};box-sizing:border-box;background:#0d0703;border:${px(rim)} solid #c9a352;border-radius:${px(9)};box-shadow:inset 0 0 ${px(18)} #000,0 ${px(3)} ${px(5)} rgba(0,0,0,.7),inset 0 0 0 ${px(1)} #6b4f1c}
 .dial{position:absolute;left:${px(1680)};width:${px(168)};height:${px(168)};border-radius:50%;background:radial-gradient(circle,transparent 62%,#2b1809 63%,#2b1809 66%,transparent 67%),repeating-conic-gradient(rgba(233,207,140,.85) 0 1.4deg,transparent 1.4deg 30deg);-webkit-mask:radial-gradient(circle,transparent 66%,#000 67%,#000 72%,transparent 73%);mask:radial-gradient(circle,transparent 66%,#000 67%,#000 72%,transparent 73%)}
 .k{position:absolute;left:${px(1706)};width:${px(116)};height:${px(116)};border-radius:50%;background:repeating-conic-gradient(#2a1d0d 0 2.2deg,#a98a4d 2.2deg 4.5deg);box-shadow:0 ${px(9)} ${px(14)} rgba(0,0,0,.8),0 ${px(2)} ${px(3)} rgba(0,0,0,.9)}
 .cap{position:absolute;inset:${px(11)};border-radius:50%;background:radial-gradient(circle at 34% 28%,#fff0bd 0,#dcbc72 22%,#a68242 58%,#5d4318 100%);box-shadow:inset 0 ${px(2)} ${px(2)} rgba(255,246,214,.7),inset 0 ${px(-3)} ${px(4)} rgba(40,25,5,.75),0 0 0 ${px(1)} #2a1d0d}
@@ -67,7 +72,8 @@ html,body{margin:0;background:transparent}
 <div class=plate><div></div></div>
 ${screw(69, 90, 20)}${screw(198, 90, 110)}${screw(69, 219, 75)}${screw(198, 219, 35)}
 <div class=brand>Spelunkr<b>TV</b></div>
-<div class=grille></div>
+<div class="grille g1"></div>
+<div class=np></div>
 ${knob(100, "VOLUME")}${knob(290, "CHANNEL")}
 <div class="grille g2"></div>
 </div>
