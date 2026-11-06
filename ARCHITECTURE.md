@@ -31,7 +31,8 @@ continuous TV stream.
   `FfmpegProcess` runs one job and measures what it wrote, `BumpCards` times the bump text, `Pacing` keeps the
   stream on the wall clock, `ArchiveOriginals` finds a film's better original file on archive.org, `CabinetArt`
   puts the channel's logo on the TV cabinet image, `BumpClips` downloads and measures bump clips ahead of their break,
-  `BumpClipVideo` draws a clip under the bump text.
+  `BumpClipVideo` draws a clip under the bump text, `NowPlaying` decides what the cabinet's now-playing window
+  says.
 - **Live TV landing** (`LiveTvLanding.cs`): on startup, and when an account is created, gives every account with
   no Live TV default screen the Guide (jellyfin-web's `landing-livetv` preference). An existing value is never changed.
 - **Settings** (`Plugin.cs`, `configPage.html`): two switches on Jellyfin's plugin page, "Show the TV cabinet" and
@@ -92,6 +93,12 @@ continuous TV stream.
   filter, with its color handling pinned to bt709, and the CPU route is pinned to match: otherwise the wood changes
   shade with each film's color tags at every join. The setting is read once when a stream opens, and viewers who
   join later share that stream, so a running picture never changes.
+- **Now-playing window.** The cabinet art has an empty window on the left; each job writes into it "NOW PLAYING"
+  with the film's title and year, or "UP NEXT" with the next film's during bumps, ads and cards (found by stepping
+  through the schedule from the segment's end). The words are drawn with drawtext onto the cabinet's one decoded frame
+  before it is looped, glow included (a blurred copy), so they cost nothing per frame, and the GPU job and its CPU
+  twin place them from the same numbers. Titles wrap by measured glyph widths of the serif font and stop at four
+  lines with "…". If the next film can't be found the window stays empty.
 - **GPU picture follows Jellyfin's own setting.** When Jellyfin's hardware acceleration is
   VA-API with hardware encoding on and Jellyfin found Vulkan works on the device, films are lightly denoised on the
   CPU, then upscaled to 1080p with libplacebo (ewa_lanczossharp, debanding) and encoded with h264_vaapi. Bumps,
