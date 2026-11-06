@@ -116,7 +116,7 @@ public static class FfmpegJobs
                         files));
                 }
 
-                jobs.Add(gpu => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, .. CardVideo(p, gpu, filter), "-map", "[v]", "-map", "1:a", .. Tail(gpu)], files));
+                jobs.Add(gpu => SilentCard(p, gpu, look, filter, files, durationMs, outputOffsetS));
                 break;
             }
         }
@@ -124,7 +124,7 @@ public static class FfmpegJobs
         // The last resort: the channel color with the title (or channel name) and silence.
         var slateText = segment.Title ?? look.Name;
         var (slate, slateFiles) = Cards([new BumpCard(offsetMs, offsetMs + durationMs, slateText)], look, offsetMs, p);
-        jobs.Add(gpu => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, .. CardVideo(p, gpu, slate), "-map", "[v]", "-map", "1:a", .. Tail(gpu)], slateFiles));
+        jobs.Add(gpu => SilentCard(p, gpu, look, slate, slateFiles, durationMs, outputOffsetS));
 
         // On the GPU each job is followed by its CPU twin, so a failed GPU film is retried as the same film on the CPU
         // before anything further down the list (a GPU title slate would otherwise fill the rest of the film).
@@ -148,11 +148,15 @@ public static class FfmpegJobs
         var p = picture ?? Picture.Cpu;
         var text = "TUNING IN\n\n" + look.Name + (segment.Kind == "show" && segment.Title is not null ? "\n\n" + segment.Title : string.Empty);
         var (filter, files) = Cards([new BumpCard(0, durationMs, text)], look, 0, p);
-        FfmpegJob Job(bool gpu) => new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, .. CardVideo(p, gpu, filter), "-map", "[v]", "-map", "1:a", .. Encode(p, gpu, durationMs, 0)], files);
+        FfmpegJob Job(bool gpu) => SilentCard(p, gpu, look, filter, files, durationMs, 0);
         return p.VaapiDevice is null ? [Job(false)] : [Job(true), Job(false)];
     }
 
     private static readonly Dictionary<string, string> Empty = [];
+
+    // A card over the channel color with silence: a bump with no music, the title slate, and the tuning-in card.
+    private static FfmpegJob SilentCard(Picture p, bool gpu, ChannelLook look, string filter, Dictionary<string, string> files, long durationMs, double outputOffsetS) =>
+        new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, .. CardVideo(p, gpu, filter), "-map", "[v]", "-map", "1:a", .. Encode(p, gpu, durationMs, outputOffsetS)], files);
 
     // -progress: ffmpeg reports how much it has written (out_time_us) on stderr, so a job that dies part-way can be
     // finished from exactly where it stopped.
