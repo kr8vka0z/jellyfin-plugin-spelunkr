@@ -283,11 +283,11 @@ public static class FfmpegJobs
     }
 
     // Each line of the window with its font size (1080p px), weight, color and the gap above it.
-    private static List<(string Text, int Size, bool Bold, string Color, int Gap)> WindowLines(NowPlaying np) =>
+    private static List<(string Text, double Size, bool Bold, string Color, int Gap)> WindowLines(NowPlaying np) =>
     [
         (np.Label, 12, true, "0xE09030", 0),
-        .. np.TitleLines().Select((t, i) => (t, 23, true, "0xFFB347", i == 0 ? 6 : 0)),
-        .. np.Year is null ? [] : new[] { (np.Year, 16, false, "0xFFB347", 3) },
+        .. np.TitleLines().Select((t, i) => (t, np.TitleSize, true, "0xFFB347", i == 0 ? 6 : 0)),
+        .. np.Year is null ? [] : new[] { (np.Year, 16.0, false, "0xFFB347", 3) },
     ];
 
     // Adds the window's text files to a job that draws the window.

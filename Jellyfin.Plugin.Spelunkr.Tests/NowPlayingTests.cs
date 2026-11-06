@@ -56,20 +56,34 @@ public class NowPlayingTests
     [Fact]
     public void A_title_past_four_lines_ends_in_an_ellipsis_and_no_line_is_too_wide()
     {
-        var lines = new NowPlaying("UP NEXT", "The Private Life of the Gannets and Other Remarkable Seabirds of Scotland", null).TitleLines();
+        var np = new NowPlaying("UP NEXT", "The Private Life of the Gannets and Other Rare Seabirds of Scotland", null);
+        var lines = np.TitleLines();
 
         Assert.Equal(4, lines.Count);
         Assert.EndsWith("…", lines[^1], StringComparison.Ordinal);
-        Assert.All(lines, l => Assert.True(NowPlaying.Ems(l) <= NowPlaying.LineEms, l));
+        Assert.Equal(NowPlaying.TitlePx, np.TitleSize);
+        Assert.All(lines, l => Assert.True(NowPlaying.Ems(l) * np.TitleSize <= NowPlaying.LinePx, l));
+    }
+
+    [Fact]
+    public void A_long_single_word_shrinks_the_title_to_fit_whole()
+    {
+        var np = new NowPlaying("NOW PLAYING", "Frankenstein", "1931");
+
+        Assert.Equal(["Frankenstein"], np.TitleLines());
+        Assert.True(np.TitleSize < NowPlaying.TitlePx);
+        Assert.True(NowPlaying.Ems("Frankenstein") * np.TitleSize <= NowPlaying.LinePx);
     }
 
     [Fact]
     public void A_word_too_wide_for_the_window_is_broken_rather_than_spilling()
     {
-        var lines = new NowPlaying("NOW PLAYING", "WWWWWWWWWWWW", null).TitleLines();
+        var np = new NowPlaying("NOW PLAYING", "WWWWWWWWWWWW", null);
+        var lines = np.TitleLines();
 
+        Assert.True(lines.Count > 1);
         Assert.Equal("WWWWWWWWWWWW", string.Concat(lines));
-        Assert.All(lines, l => Assert.True(NowPlaying.Ems(l) <= NowPlaying.LineEms, l));
+        Assert.All(lines, l => Assert.True(NowPlaying.Ems(l) * np.TitleSize <= NowPlaying.LinePx, l));
     }
 
     public static TheoryData<string> Modes => new() { "cpu", "gpu" };

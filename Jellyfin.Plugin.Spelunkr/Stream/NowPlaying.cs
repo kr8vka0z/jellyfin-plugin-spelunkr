@@ -13,11 +13,14 @@ public sealed record NowPlaying(string Label, string Title, string? Year)
     /// <summary>Most title lines the window holds; a longer title ends in "…" on the last.</summary>
     public const int MaxLines = 4;
 
-    /// <summary>
-    /// A title line's widest, in ems of the title font: the window's 174 px less its 4 px rim and 6 px each side,
-    /// over the 23 px title size (1080p units; both scale together).
-    /// </summary>
-    public const double LineEms = (174 - (2 * 4) - (2 * 6)) / 23.0;
+    /// <summary>A title line's widest at 1080p: the window's 174 px less its 4 px rim and 6 px each side.</summary>
+    public const double LinePx = 174 - (2 * 4) - (2 * 6);
+
+    /// <summary>The title's font size at 1080p, as in the approved mockup.</summary>
+    public const double TitlePx = 23;
+
+    // The smallest the title shrinks to so a long single word (Frankenstein) fits whole; past that it is broken.
+    private const double MinTitlePx = 17;
 
     // How far the schedule is searched for the next film; the bumps and ads between two films are a few segments.
     private const int MaxHops = 50;
@@ -62,7 +65,13 @@ public sealed record NowPlaying(string Label, string Title, string? Year)
         return null;
     }
 
-    /// <summary>The title broken into lines that fit the window, at most <see cref="MaxLines"/>.</summary>
+    /// <summary>Gets the title's font size at 1080p: <see cref="TitlePx"/>, or smaller when its longest word wouldn't fit a line.</summary>
+    public double TitleSize => Math.Clamp(LinePx / Title.Split(' ').Max(Ems), MinTitlePx, TitlePx);
+
+    // A line's widest in ems of the title at its size.
+    private double LineEms => LinePx / TitleSize;
+
+    /// <summary>The title broken into lines that fit the window at <see cref="TitleSize"/>, at most <see cref="MaxLines"/>.</summary>
     public IReadOnlyList<string> TitleLines()
     {
         var lines = FfmpegJobs.WrapLine(Title, LineEms, Ems).Split('\n').SelectMany(Broken).ToList();
@@ -88,7 +97,7 @@ public sealed record NowPlaying(string Label, string Title, string? Year)
         string.IsNullOrWhiteSpace(film.Title) ? null : new(label, film.Title.Trim(), string.IsNullOrWhiteSpace(film.Year) ? null : film.Year.Trim());
 
     // A single word too wide for a line, cut into pieces that fit (wrapping only breaks at spaces).
-    private static IEnumerable<string> Broken(string line)
+    private IEnumerable<string> Broken(string line)
     {
         while (Ems(line) > LineEms)
         {
