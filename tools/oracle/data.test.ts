@@ -25,3 +25,19 @@ test("accepts the paths Spelunkr actually uses", () => {
   expect(inside("/tmp/mirror", "manifests/gumshoe/v19.json")).toBe("/tmp/mirror/manifests/gumshoe/v19.json");
   expect(bucketPath("platform/294b0bf5ae4d1917.json")).toBe("platform/294b0bf5ae4d1917.json");
 });
+
+// The data host answers 403 to any request that does not name spelunkr.tv as its Referer (issue #27).
+test("incident-2026-11-06-data-referer: bucket reads name spelunkr.tv as the Referer", async () => {
+  const real = globalThis.fetch;
+  let referer: string | null = null;
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    referer = new Headers(init?.headers).get("referer");
+    return new Response("{}");
+  }) as typeof fetch;
+  try {
+    expect(await readText("lineup.json")).toBe("{}");
+  } finally {
+    globalThis.fetch = real;
+  }
+  expect(referer).toBe("https://spelunkr.tv/");
+});

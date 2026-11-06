@@ -42,6 +42,44 @@ public class SpelunkrSourceTests
         Assert.Equal("#E8DFC8", gumshoe.Color);
     }
 
+    // The data host answers 403 to any request that does not name spelunkr.tv as its Referer (issue #27).
+    [Fact]
+    public async Task Incident_2026_11_06_data_referer_every_bucket_read_names_spelunkr_tv_as_the_referer()
+    {
+        var handler = new FixtureHandler();
+        var source = new SpelunkrSource(new OneHandlerFactory(handler), null!, NullLogger<SpelunkrSource>.Instance);
+
+        var channels = await source.GetChannelsAsync(CancellationToken.None);
+
+        Assert.Contains(channels, c => c.Id == "gumshoe");
+        Assert.NotEmpty(handler.Referers);
+        Assert.All(handler.Referers, r => Assert.Equal("https://spelunkr.tv/", r));
+    }
+
+    private sealed class OneHandlerFactory(HttpMessageHandler handler) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+    }
+
+    /// <summary>Serves the fixture mirror as the bucket would, 404 for files it doesn't hold, and notes each Referer.</summary>
+    private sealed class FixtureHandler : HttpMessageHandler
+    {
+        public List<string?> Referers { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            lock (Referers)
+            {
+                Referers.Add(request.Headers.Referrer?.ToString());
+            }
+
+            var file = Path.Combine(ScheduleEngineTests.FixtureDir, request.RequestUri!.AbsolutePath.TrimStart('/'));
+            return Task.FromResult(File.Exists(file)
+                ? new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(File.ReadAllText(file)) }
+                : new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+        }
+    }
+
     [Fact]
     public async Task Answers_what_is_on_and_reads_the_lineup_once_an_hour()
     {
