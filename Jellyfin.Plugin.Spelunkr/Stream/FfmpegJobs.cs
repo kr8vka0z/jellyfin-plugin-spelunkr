@@ -22,8 +22,16 @@ public sealed record FfmpegJob(IReadOnlyList<string> Args, IReadOnlyDictionary<s
 /// <param name="MaxRateK">Video bitrate cap, kbit/s.</param>
 /// <param name="VaapiDevice">The GPU's device path from Jellyfin's settings; null for a CPU stream.</param>
 /// <param name="Cabinet">The channel's TV cabinet image at this size (see <see cref="CabinetArt"/>); null for a plain full-frame picture.</param>
-public sealed record Picture(int Width, int Height, int MaxRateK, string? VaapiDevice, string? Cabinet = null)
+/// <param name="Window">What the cabinet's now-playing window says for this segment; null leaves it empty. Ignored without a cabinet.</param>
+public sealed record Picture(int Width, int Height, int MaxRateK, string? VaapiDevice, string? Cabinet = null, NowPlaying? Window = null)
 {
+    // The now-playing window (left, top, width, height) at 1080p, scaled with the picture. Must match the art
+    // (tools/cabinet/render.ts). Drawn from the same numbers on the GPU and its CPU twin, so a fallback can't move it.
+    private static readonly int[] NowPlayingBox = [52, 432, 174, 206];
+
+    /// <summary>Gets the now-playing window's left, top, width and height, in pixels.</summary>
+    public (int X, int Y, int W, int H) WindowBox => (NowPlayingBox[0] * Height / 1080, NowPlayingBox[1] * Height / 1080, NowPlayingBox[2] * Height / 1080, NowPlayingBox[3] * Height / 1080);
+
     /// <summary>Gets the left edge of the cabinet's tube, in pixels. Must match the art (tools/cabinet/render.ts).</summary>
     public int TubeX => Width * 312 / 1920;
 
@@ -140,8 +148,8 @@ public static class FfmpegJobs
         // ponytail: a GPU that is broken outright fails each segment's first GPU job before its CPU twin runs.
         // That failure is immediate (the device won't open), so it costs a moment per segment, not a stall.
         return p.VaapiDevice is null
-            ? jobs.Select(j => j(false)).ToList()
-            : jobs.SelectMany(j => new[] { j(true), j(false) }).ToList();
+            ? jobs.Select(j => WithWindow(p, j(false))).ToList()
+            : jobs.SelectMany(j => new[] { WithWindow(p, j(true)), WithWindow(p, j(false)) }).ToList();
     }
 
     /// <summary>
@@ -157,7 +165,7 @@ public static class FfmpegJobs
         var p = picture ?? Picture.Cpu;
         var text = "TUNING IN\n\n" + look.Name + (segment.Kind == "show" && segment.Title is not null ? "\n\n" + segment.Title : string.Empty);
         var (filter, files) = Cards([new BumpCard(0, durationMs, text)], look, 0, p);
-        FfmpegJob Job(bool gpu) => SilentCard(p, gpu, look, filter, files, durationMs, 0);
+        FfmpegJob Job(bool gpu) => WithWindow(p, SilentCard(p, gpu, look, filter, files, durationMs, 0));
         return p.VaapiDevice is null ? [Job(false)] : [Job(true), Job(false)];
     }
 
@@ -235,8 +243,58 @@ public static class FfmpegJobs
     /// or a film in another color space plays with the wrong colors.
     /// </remarks>
     private static string Framed(Picture p, bool gpu, string video, int cabinetInput) => gpu
-        ? string.Create(CultureInfo.InvariantCulture, $"{video},hwupload[a];[{cabinetInput}:v]format=rgba,setparams=color_trc=bt709:color_primaries=bt709,hwupload,loop=-1:1:0[b];[a][b]libplacebo=inputs=2:w={p.Width}:h={p.Height}:fps=30:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12:colorspace=bt709:range=tv:color_primaries=bt709:color_trc=bt709:{Place("x", p.TubeX, 0)}:{Place("y", p.TubeY, 0)}:{Place("w", p.TubeWidth, p.Width)}:{Place("h", p.TubeHeight, p.Height)},hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1[v]")
-        : string.Create(CultureInfo.InvariantCulture, $"{video},pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,scale=out_color_matrix=bt709:out_range=tv[a];[{cabinetInput}:v]format=yuva420p,loop=-1:1:0[b];[a][b]overlay,format=yuv420p,setsar=1[v]");
+        ? string.Create(CultureInfo.InvariantCulture, $"{video},hwupload[a];[{cabinetInput}:v]format=rgba{Window(p)},setparams=color_trc=bt709:color_primaries=bt709,hwupload,loop=-1:1:0[b];[a][b]libplacebo=inputs=2:w={p.Width}:h={p.Height}:fps=30:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12:colorspace=bt709:range=tv:color_primaries=bt709:color_trc=bt709:{Place("x", p.TubeX, 0)}:{Place("y", p.TubeY, 0)}:{Place("w", p.TubeWidth, p.Width)}:{Place("h", p.TubeHeight, p.Height)},hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1[v]")
+        : string.Create(CultureInfo.InvariantCulture, $"{video},pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,scale=out_color_matrix=bt709:out_range=tv[a];[{cabinetInput}:v]{(p.Window is null ? string.Empty : "format=rgba" + Window(p) + ",")}format=yuva420p,loop=-1:1:0[b];[a][b]overlay,format=yuv420p,setsar=1[v]");
+
+    // The now-playing window's words: label, title lines, year. The window is empty in the art; these are drawn onto
+    // the one decoded cabinet frame before it is looped, so they cost nothing per frame and a soft glow (a blurred
+    // copy of the words) is affordable. Sizes and gaps follow the approved mockup, at 1080p and scaled.
+    private static string Window(Picture p)
+    {
+        if (p.Window is null || p.Cabinet is null)
+        {
+            return string.Empty;
+        }
+
+        var s = p.Height / 1080.0;
+        var (x, y, w, h) = p.WindowBox;
+        var lines = WindowLines(p.Window);
+        var block = lines.Sum(l => (l.Gap + (l.Size * 1.15)) * s);
+        var top = (h - block) / 2;
+        var glow = new List<string>();
+        var sharp = new List<string>();
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var (_, size, bold, color, gap) = lines[i];
+            top += gap * s;
+            // The face goes in fontfile as a fontconfig pattern: drawtext's font option takes only a family name, so
+            // "serif:bold" there quietly gave the sans default. A fontfile that isn't a file is handed to fontconfig,
+            // which picks the nearest installed serif instead of failing the job.
+            var text =string.Create(CultureInfo.InvariantCulture, $"drawtext=textfile=np{i}.txt:expansion=none:fontfile='serif{(bold ? "\\:bold" : string.Empty)}':fontsize={Math.Round(size * s)}");
+            glow.Add(string.Create(CultureInfo.InvariantCulture, $"{text}:x={w / 2}-tw/2:y={Math.Round(top)}:fontcolor=0xFFA028"));
+            sharp.Add(string.Create(CultureInfo.InvariantCulture, $"{text}:x={x + (w / 2)}-tw/2:y={y + Math.Round(top)}:fontcolor={color}"));
+            top += size * 1.15 * s;
+        }
+
+        // The glow layer starts as transparent amber, so its blurred edges fade out instead of darkening.
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $",split[npc][npg];[npg]crop={w}:{h}:{x}:{y},lutrgb=r=255:g=160:b=40:a=0,{string.Join(',', glow)},format=gbrap,gblur=sigma={4.5 * s:0.0},colorchannelmixer=aa=0.8,format=rgba[npl];[npc][npl]overlay={x}:{y}:format=rgb,format=rgba,{string.Join(',', sharp)}");
+    }
+
+    // Each line of the window with its font size (1080p px), weight, color and the gap above it.
+    private static List<(string Text, int Size, bool Bold, string Color, int Gap)> WindowLines(NowPlaying np) =>
+    [
+        (np.Label, 12, true, "0xE09030", 0),
+        .. np.TitleLines().Select((t, i) => (t, 23, true, "0xFFB347", i == 0 ? 6 : 0)),
+        .. np.Year is null ? [] : new[] { (np.Year, 16, false, "0xFFB347", 3) },
+    ];
+
+    // Adds the window's text files to a job that draws the window.
+    private static FfmpegJob WithWindow(Picture p, FfmpegJob job) => p.Window is null || p.Cabinet is null ? job : job with
+    {
+        TextFiles = job.TextFiles.Concat(WindowLines(p.Window).Select((l, i) => KeyValuePair.Create(string.Create(CultureInfo.InvariantCulture, $"np{i}.txt"), l.Text))).ToDictionary(),
+    };
 
     // libplacebo's placement for its two inputs: the film (input 0) in the tube, the cabinet (input 1) over the frame.
     private static string Place(string axis, int film, int cabinet) =>
@@ -313,15 +371,16 @@ public static class FfmpegJobs
     }
 
     /// <summary>Breaks text into lines of about <paramref name="width"/> characters so a line fits (the font scales with the picture).</summary>
-    private static string Wrap(string text, int width) => string.Join('\n', text.Split('\n').Select(t => WrapLine(t, width)));
+    private static string Wrap(string text, int width) => string.Join('\n', text.Split('\n').Select(t => WrapLine(t, width, w => w.Length)));
 
-    private static string WrapLine(string text, int width)
+    /// <summary>Breaks one line at spaces so each piece is at most <paramref name="width"/> by <paramref name="measure"/> (a lone longer word stays whole).</summary>
+    internal static string WrapLine(string text, double width, Func<string, double> measure)
     {
         var lines = new List<string>();
         var line = string.Empty;
         foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
-            if (line.Length > 0 && line.Length + 1 + word.Length > width)
+            if (line.Length > 0 && measure(line + " " + word) > width)
             {
                 lines.Add(line);
                 line = word;
