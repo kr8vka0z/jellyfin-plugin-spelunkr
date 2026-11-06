@@ -16,6 +16,8 @@ public sealed partial class SpelunkrSource
     /// <summary>Spelunkr's public data host (no login needed); the site reads the same one.</summary>
     public const string Bucket = "https://data.spelunkr.tv/";
 
+    // Since 2026-11-06 the data host answers 403 to any request that does not name spelunkr.tv as its Referer.
+    private static readonly Uri SiteReferer = new("https://spelunkr.tv/");
 
     // Versions change every few days and a new one is listed ahead of when it takes over, so hourly is plenty.
     private static readonly TimeSpan LineupMaxAge = TimeSpan.FromHours(1);
@@ -42,7 +44,13 @@ public sealed partial class SpelunkrSource
     /// <param name="logger">Logger.</param>
     public SpelunkrSource(IHttpClientFactory httpClientFactory, ITaskManager taskManager, ILogger<SpelunkrSource> logger)
         : this(
-            (path, ct) => httpClientFactory.CreateClient(NamedClient.Default).GetStringAsync(Bucket + path, ct),
+            (path, ct) =>
+            {
+                // CreateClient hands out a new HttpClient each call, so its default headers are ours alone.
+                var client = httpClientFactory.CreateClient(NamedClient.Default);
+                client.DefaultRequestHeaders.Referrer = SiteReferer;
+                return client.GetStringAsync(Bucket + path, ct);
+            },
             logger,
             () => _ = Registration.QueueGuideRefreshAsync(taskManager, logger),
             TimeProvider.System)
