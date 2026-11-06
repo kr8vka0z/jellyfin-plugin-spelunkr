@@ -30,7 +30,8 @@ export async function readText(path: string, dataDir?: string, saveDir?: string)
   let text: string;
   if (dataDir) text = await Bun.file(inside(dataDir, path)).text();
   else {
-    const r = await fetch(BUCKET + path);
+    // Since 2026-11-06 the data host answers 403 to any request that does not name spelunkr.tv as its Referer.
+    const r = await fetch(BUCKET + path, { headers: { Referer: "https://spelunkr.tv/" } });
     if (!r.ok) throw new Error(`GET ${BUCKET + path} -> HTTP ${r.status}`);
     text = await r.text();
   }
