@@ -56,6 +56,11 @@ repository; you stay on the test build until the next release.
 - Every channel plays inside a wood-grain TV cabinet with the channel's logo on it. To turn that off, open the
   plugin's page under Dashboard → Plugins and untick **Show the TV cabinet**. It takes effect the next time a channel
   is opened with nobody watching it.
+- Live TV opens on the **Guide** instead of the Programs tab, for anyone who hasn't picked a Live TV default screen
+  (checked each time Jellyfin starts, and right away for new accounts). It works in Jellyfin Web and the phone and
+  desktop apps; TV apps don't read this setting. Anyone who already picked a screen keeps it, and each person can
+  still change it under Settings → Home → Live TV → Default screen. To stop it, untick **Open Live TV on the guide**
+  on the plugin's page; that changes nobody back.
 
 Your Jellyfin server does the video work: it converts each film as it plays. Without a graphics card that keeps
 about one CPU core busy while someone is watching; with VA-API most of the work moves to the graphics card.
