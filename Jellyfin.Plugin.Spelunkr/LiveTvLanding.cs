@@ -42,7 +42,7 @@ public sealed class LiveTvLanding : IHostedService, IEventConsumer<UserCreatedEv
     {
         try
         {
-            Apply(Enabled, _userManager.GetUsers().Select(u => u.Id), _prefs, _logger);
+            Apply(Enabled, _userManager.GetUsersIds(), _prefs, _logger);
         }
         catch (Exception ex)
         {
