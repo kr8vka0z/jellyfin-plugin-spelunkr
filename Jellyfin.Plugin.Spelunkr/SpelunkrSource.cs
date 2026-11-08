@@ -270,7 +270,6 @@ public sealed record LineupChannel(
     string Color,
     int? Dial,
     IReadOnlyList<JsonElement> Versions,
-    string? Family = null,
     bool ComingSoon = false,
     bool DebugOnly = false,
     bool AudioOverlay = false,

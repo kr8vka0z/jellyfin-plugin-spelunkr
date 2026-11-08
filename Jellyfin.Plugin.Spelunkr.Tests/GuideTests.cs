@@ -19,7 +19,6 @@ public class GuideTests
         var first = programs[0];
         Assert.Equal("The Long Night", first.Name);
         Assert.Equal(1947, first.ProductionYear);
-        Assert.True(first.IsMovie);
         Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1_793_215_002_819).UtcDateTime, first.StartDate);
         // Ends where "Forbidden" starts, so the bump, ad and bump between them belong to The Long Night.
         Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1_793_220_913_459).UtcDateTime, first.EndDate);
@@ -59,7 +58,7 @@ public class GuideTests
 
         Assert.Equal("The Long Night", film.Name);
         Assert.Equal(1947, film.ProductionYear);
-        Assert.True(film.IsMovie); // GUMSHOE is a film channel
+        Assert.False(film.IsMovie); // not even on a film channel: no "Movies" row on Live TV's home (#32)
         Assert.Equal("https://archive.org/services/img/the-long-night-1947-henry-fonda-barbara-bel-geddes-vincent-price-ann-dvorak-720p", film.ImageUrl);
         // From Fixtures/spelunkr/details/gumshoe/v19.json, item 43 (The Long Night's place in the manifest).
         Assert.Equal(
