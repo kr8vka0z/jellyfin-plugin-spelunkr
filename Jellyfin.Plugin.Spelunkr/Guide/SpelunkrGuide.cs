@@ -17,7 +17,7 @@ public sealed class SpelunkrGuide : IListingsProvider
     public SpelunkrGuide(SpelunkrSource source) => _source = source;
 
     /// <inheritdoc />
-    public string Name => "Spelunkr";
+    public string Name => "Spelunkr TV";
 
     /// <inheritdoc />
     public string Type => ProviderType;

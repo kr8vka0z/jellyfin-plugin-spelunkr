@@ -1,4 +1,4 @@
-# Spelunkr for Jellyfin
+# Spelunkr TV for Jellyfin
 
 Watch [spelunkr.tv](https://spelunkr.tv) in Jellyfin. Spelunkr runs round-the-clock TV channels of old films,
 ads and shows from the Internet Archive, the same program for everyone at the same time. This plugin adds
@@ -12,20 +12,34 @@ VACATION SLIDES: its silent home movies are scored with music the plugin can't a
 ## Install
 
 1. In Jellyfin, open **Dashboard → Plugins → Repositories** (called **Catalog → settings** in some versions) and add a repository:
-   - Name: `Spelunkr`
+   - Name: `Spelunkr TV`
    - URL: `https://raw.githubusercontent.com/kr8vka0z/jellyfin-plugin-spelunkr/main/manifest.json`
-2. Open the **Catalog**, find **Spelunkr** under Live TV, and install it.
+2. Open the **Catalog**, find **Spelunkr TV** under Live TV, and install it.
 3. Restart Jellyfin.
 4. Open **Live TV**. The channels are there with their guide. If the guide is empty, give it a few minutes: Jellyfin fills it in
    shortly after starting.
 
-Needs Jellyfin 12.3 or newer. There is nothing you have to set up. To remove it, uninstall the plugin; the Spelunkr entries
-it added under Live TV's tuner and guide settings can then be deleted there.
+Needs Jellyfin 12.3 or newer. There is nothing you have to set up.
+
+### What it changes on your server
+
+The plugin changes two things in your Jellyfin settings by itself, so it works with no setup:
+
+- **Live TV settings:** it adds a Spelunkr TV entry under the tuner settings and one under the guide settings.
+- **Everyone's Live TV default screen:** for every account that hasn't picked one, it sets Live TV to open on the
+  **Guide** instead of the Programs tab. It does this each time Jellyfin starts and as soon as a new account is made.
+  Accounts that already picked a screen are never changed, and each person can still change theirs under
+  **Settings → Home → Live TV → Default screen**. To stop it, untick **Open Live TV on the guide** on the plugin's
+  page under Dashboard → Plugins; turning it off does not change anyone back. It applies to Jellyfin Web and the
+  phone and desktop apps; TV apps don't read this setting.
+
+To remove the plugin, uninstall it. The Spelunkr TV entries under Live TV's tuner and guide settings can then be
+deleted there. Anyone it set to open on the Guide stays that way until they change it.
 
 ### Install by hand
 
 Download the zip from the [latest release](https://github.com/kr8vka0z/jellyfin-plugin-spelunkr/releases), unzip it
-into a folder named `Spelunkr_<version>` (for example `Spelunkr_0.1.0.0`) inside the `plugins` folder of Jellyfin's
+into a folder named `Spelunkr TV_<version>` (for example `Spelunkr TV_0.3.6.0`) inside the `plugins` folder of Jellyfin's
 config folder, and restart Jellyfin.
 
 ### Try test builds
@@ -33,10 +47,10 @@ config folder, and restart Jellyfin.
 Test builds carry changes that haven't been released yet, and they can break. In the same Jellyfin repositories
 list, add a second repository:
 
-- Name: `Spelunkr test`
+- Name: `Spelunkr TV test`
 - URL: `https://raw.githubusercontent.com/kr8vka0z/jellyfin-plugin-spelunkr/dev/manifest-dev.json`
 
-Jellyfin then offers the newest test build as an update to Spelunkr, unless a newer real release has just come
+Jellyfin then offers the newest test build as an update to Spelunkr TV, unless a newer real release has just come
 out. Install it from the Catalog and restart. When a real release comes out it outranks the test build, so you move
 onto it the same way. To stop, remove that
 repository; you stay on the test build until the next release.
@@ -56,11 +70,8 @@ repository; you stay on the test build until the next release.
 - Every channel plays inside a wood-grain TV cabinet with the channel's logo on it. To turn that off, open the
   plugin's page under Dashboard → Plugins and untick **Show the TV cabinet**. It takes effect the next time a channel
   is opened with nobody watching it.
-- Live TV opens on the **Guide** instead of the Programs tab, for anyone who hasn't picked a Live TV default screen
-  (checked each time Jellyfin starts, and right away for new accounts). It works in Jellyfin Web and the phone and
-  desktop apps; TV apps don't read this setting. Anyone who already picked a screen keeps it, and each person can
-  still change it under Settings → Home → Live TV → Default screen. To stop it, untick **Open Live TV on the guide**
-  on the plugin's page; that changes nobody back.
+- Live TV opens on the **Guide** instead of the Programs tab. The plugin changes each account's setting to do this;
+  see [What it changes on your server](#what-it-changes-on-your-server).
 
 Your Jellyfin server does the video work: it converts each film as it plays. Without a graphics card that keeps
 about one CPU core busy while someone is watching; with VA-API most of the work moves to the graphics card.
