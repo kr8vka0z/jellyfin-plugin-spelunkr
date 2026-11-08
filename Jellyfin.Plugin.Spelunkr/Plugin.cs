@@ -33,7 +33,7 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public static Plugin? Instance { get; private set; }
 
     /// <inheritdoc />
-    public override string Name => "Spelunkr";
+    public override string Name => "Spelunkr TV";
 
     /// <inheritdoc />
     public override Guid Id => PluginId;

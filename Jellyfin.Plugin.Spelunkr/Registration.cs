@@ -63,7 +63,7 @@ public sealed class Registration : IHostedService
             if (tuner is null)
             {
                 tuner = await _tunerHostManager.SaveTunerHost(
-                    new TunerHostInfo { Type = SpelunkrTunerHost.TunerType, FriendlyName = "Spelunkr", Url = "https://spelunkr.tv" },
+                    new TunerHostInfo { Type = SpelunkrTunerHost.TunerType, FriendlyName = "Spelunkr TV", Url = "https://spelunkr.tv" },
                     dataSourceChanged: false).ConfigureAwait(false);
                 _logger.LogInformation("Added the Spelunkr tuner to Live TV");
             }
