@@ -23,8 +23,8 @@
 
 ## Branches
 
-New work: branch from `dev`, PR into `dev`. Each push to `dev` makes a test build (one exception under The two feeds). Only three things reach `main`:
-a release PR, a breakage fix, and the bots' own feed commits. Never PR `dev` itself into `main`.
+New work: branch from `dev`, PR into `dev`. Each push to `dev` makes a test build (one exception under The two feeds). Only four things reach `main`:
+a release PR, a breakage fix, the bots' own feed commits, and a catalog-text PR (under The two feeds). Never PR `dev` itself into `main`.
 
 ## Releases
 
@@ -44,7 +44,9 @@ A release starts only when the maintainer says so.
 ## The two feeds
 
 - `manifest.json`: the public feed. Real releases only, and only the release job writes it, on `main`. `dev` gets
-  it by the copy-back and never edits it.
+  it by the copy-back and never edits it. One exception: the catalog text (`name`, `description`, `overview`, never
+  `guid` or a version entry) changes by a PR into `main`, opened only once a published release does what the new
+  text says, linking its spec and merged by the maintainer.
 - `manifest-dev.json`: the test feed, on `dev` only, holding just the newest test build. `test-build.yml` writes it.
   The release commit removes it, so it never reaches `main`, and it is ignored when comparing `dev` with `main`.
 - Test builds: `v<base>-dev.<run>` becomes Jellyfin version `<base>.<run>`, where base is the newest release the
