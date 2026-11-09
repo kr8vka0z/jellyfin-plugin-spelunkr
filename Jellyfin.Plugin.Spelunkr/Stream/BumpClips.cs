@@ -40,11 +40,11 @@ public sealed class BumpClips
 
     /// <summary>Initializes a new instance of the <see cref="BumpClips"/> class.</summary>
     /// <param name="httpClientFactory">Jellyfin's HTTP client factory.</param>
-    /// <param name="probePath">Jellyfin's ffprobe.</param>
+    /// <param name="probePath">Jellyfin's ffprobe, asked at each probe: Jellyfin may set it after this is built.</param>
     /// <param name="dir">Where clips are kept.</param>
     /// <param name="logger">Logger.</param>
-    public BumpClips(IHttpClientFactory httpClientFactory, string probePath, string dir, ILogger logger)
-        : this((url, to, ct) => Fetch(httpClientFactory, url, to, ct), (path, ct) => ProbeAsync(probePath, path, ct), dir, logger, TimeProvider.System)
+    public BumpClips(IHttpClientFactory httpClientFactory, Func<string> probePath, string dir, ILogger logger)
+        : this((url, to, ct) => Fetch(httpClientFactory, url, to, ct), (path, ct) => ProbeAsync(probePath(), path, ct), dir, logger, TimeProvider.System)
     {
     }
 

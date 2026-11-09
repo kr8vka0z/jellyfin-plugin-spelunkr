@@ -40,7 +40,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
         _source = source;
         _originals = originals;
         // Kept in the cache folder: a clip is only ever a re-download away.
-        _clips = new BumpClips(httpClientFactory, mediaEncoder.ProbePath, Path.Combine(config.CommonApplicationPaths.CachePath, "spelunkr-clips"), logger);
+        _clips = new BumpClips(httpClientFactory, () => mediaEncoder.ProbePath, Path.Combine(config.CommonApplicationPaths.CachePath, "spelunkr-clips"), logger);
         _config = config;
         _mediaEncoder = mediaEncoder;
         _appHost = appHost;

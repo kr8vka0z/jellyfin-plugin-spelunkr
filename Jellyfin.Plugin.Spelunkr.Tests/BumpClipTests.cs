@@ -20,7 +20,7 @@ public class BumpClipTests
     /// gs-075 (StreamPlanTests.OpenBump) with a made-up clip on its first slide, the second slide under it, and the last
     /// two as hold steps: the same manifest edit a preview build makes.
     /// </summary>
-    internal static Segment ClipBump(string look = "duozoom")
+    internal static Segment ClipBump(string look = "duozoom", string? zoomAt = null)
     {
         var engine = new ScheduleEngine();
         var lineup = JsonNode.Parse(File.ReadAllText(Path.Combine(ScheduleEngineTests.FixtureDir, "lineup.json")))!;
@@ -34,6 +34,11 @@ public class BumpClipTests
                 slides[0]!["clip"] = Src;
                 slides[0]!["track"] = "slowerpace-settling-the-score.mp3";
                 slides[0]!["look"] = look;
+                if (zoomAt is not null)
+                {
+                    slides[0]!["zoomAt"] = zoomAt;
+                }
+
                 slides[1]!["under"] = true;
             }
 
@@ -149,6 +154,16 @@ public class BumpClipTests
     [InlineData(4, 2.3)]
     [InlineData(5, 1.25)] // the CSS stops at step 4, so later steps get step 0's scale
     public void Zoom_steps_follow_the_sites_css(int step, double scale) => Assert.Equal(scale, BumpClipVideo.Zoom(step));
+
+    [Fact]
+    public void Zoom_keeps_the_zoomAt_point_still()
+    {
+        var bump = ClipBump("zoom", "20% 75%");
+
+        var graph = Graph(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
+
+        Assert.Contains(":x='iw*0.200*(1-1/zoom)':y='ih*0.750*(1-1/zoom)':", graph, StringComparison.Ordinal);
+    }
 
     [Theory]
     [InlineData("cpu")]
