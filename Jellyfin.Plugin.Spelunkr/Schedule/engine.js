@@ -4,3 +4,4 @@ const ld=["flash","duotone","zoom","duozoom"],av=/^(100|\d{1,2})% (100|\d{1,2})%
 function wd(e,t){return`https://archive.org/download/${e}/${encodeURIComponent(t)}`}
 function Fy(e,t,n){const r=e.bumps||[],s=(t==null?void 0:t.bumps)||[];return{v:n.v,epochMs:n.epochMs,effectiveAtMs:n.effectiveAtMs??n.epochMs,startIndex:n.startIndex||0,items:e.items,bumps:r.length&&s.length?{channelBumps:r,platformBumps:s,channelAudio:e.audioOverlay?Object.values(e.audioPools||{}).flat():e.audio||[],platformAudio:t.audio||[]}:null,audioPools:e.audioPools||null,block:e.block||null,ads:e.ads||null,engine:e.engine}};
 export { Kv as createRegistry, Mo as addVersion, un as lookup, ui as walk, Fy as buildVersion, wd as archiveUrl, gc as slideMs, wl as LEAD_IN_MS, Bs as TAIL_A_MS, lo as TAIL_B_MS, vp as GAP_MS };
+export { gp as clipOf, uv as clipSpan, dv as clipAt, pv as holdStep, fv as wordsHidden };
