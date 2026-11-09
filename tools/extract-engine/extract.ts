@@ -54,8 +54,12 @@ function once(label: string, re: RegExp): RegExpExecArray {
 }
 
 // Identifiers are [\w$]+, not \w+: minifiers use `$` in names (e.g. `$s`), and \w does not match it.
-// Slice 1: constants, RNG, bump/ad planners, version registry, cycle builder, lookup (Qt) and walker (to).
-const start1 = once("slide-timing constants", /const [\w$]+=2500,[\w$]+=1500,[\w$]+=55,([\w$]+)=300,[\w$]+=2e3,([\w$]+)=3500,([\w$]+)=1e3,/);
+// Slice 1: bump-clip helpers, constants, RNG, bump/ad planners, version registry, cycle builder, lookup (Qt) and
+// walker (to). Since the 2026-11-09 build the bump planner asks the bump-clip helpers which music track a clip names,
+// so the slice starts at their list of clip looks, and the minifier folds the timing constants into that same
+// `const` (hence the lookbehind instead of a leading "const ").
+const start1 = once("bump-clip looks", /const [\w$]+=\["flash","duotone","zoom","duozoom"\]/);
+const timing = once("slide-timing constants", /(?<=const |,)[\w$]+=2500,[\w$]+=1500,[\w$]+=55,([\w$]+)=300,[\w$]+=2e3,([\w$]+)=3500,([\w$]+)=1e3,/);
 const walker = once("schedule walker", /function\*([\w$]+)\(e,t\)\{let n=t;for\(;;\)\{const r=([\w$]+)\(e,n\);yield r,n=r\.endMs\}\}/);
 // Slice 2: archive.org download URL.
 const url = once("archive.org url", /function ([\w$]+)\(e,t\)\{return`https:\/\/archive\.org\/download\/\$\{e\}\/\$\{encodeURIComponent\(t\)\}`\}/);
@@ -65,7 +69,7 @@ const buildEnd = src.indexOf("engine:e.engine}}", build.index);
 if (buildEnd < 0) fail(`version builder end "engine:e.engine}}" not found`);
 
 const end1 = walker.index + walker[0].length;
-if (!(start1.index < end1)) fail("slide-timing constants come after the walker; bundle layout changed");
+if (!(start1.index < timing.index && timing.index < end1)) fail("bump-clip looks, timing constants and walker are out of order; bundle layout changed");
 const slice1 = src.slice(start1.index, end1);
 const slice2 = url[0];
 const slice3 = src.slice(build.index, buildEnd + "engine:e.engine}}".length);
@@ -79,7 +83,7 @@ const inSlice1 = (label: string, re: RegExp) => {
 const registry = inSlice1("registry", /function ([\w$]+)\(e,t=\[\]\)\{const n=\{channelId:e,versions:\[\]\};for\(const r of t\)([\w$]+)\(n,r\);return n\}/);
 const slideMs = inSlice1("slide length", /function ([\w$]+)\(e\)\{return Math\.max\([\w$]+,[\w$]+\+e\.length\*[\w$]+\)\}const ([\w$]+)=1e3,/);
 
-const [, gapName, leadInName, tailAName] = start1;
+const [, gapName, leadInName, tailAName] = timing;
 const names = {
   createRegistry: registry[1],
   addVersion: registry[2],
