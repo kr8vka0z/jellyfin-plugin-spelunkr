@@ -148,18 +148,31 @@ public sealed class BumpClips
         }
     }
 
-    private static async Task<double?> ProbeAsync(string probePath, string path, CancellationToken ct)
+    // stderr isn't redirected (with -v error it's a line at most), so a chatty damaged file can't fill an unread pipe.
+    // A probe still running when ct fires (the fetch timeout) is killed, the way FfmpegProcess ends a stalled job.
+    internal static async Task<double?> ProbeAsync(string probePath, string path, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo(probePath) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(probePath) { RedirectStandardOutput = true, UseShellExecute = false };
         foreach (var arg in new[] { "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path })
         {
             psi.ArgumentList.Add(arg);
         }
 
         using var process = Process.Start(psi) ?? throw new IOException("could not start " + probePath);
-        var output = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
-        await process.WaitForExitAsync(ct).ConfigureAwait(false);
-        return process.ExitCode == 0 && double.TryParse(output.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : null;
+        try
+        {
+            var output = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+            return process.ExitCode == 0 && double.TryParse(output.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : null;
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
     }
 
     private static void TryDelete(string path)

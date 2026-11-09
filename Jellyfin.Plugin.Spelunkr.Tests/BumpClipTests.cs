@@ -248,6 +248,39 @@ public class BumpClipTests
         }
     }
 
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")] // shell scripts stand in for ffprobe
+    public async Task Probe_survives_a_chatty_stderr_and_is_killed_on_timeout()
+    {
+        var dir = Directory.CreateTempSubdirectory("spelunkr-probe").FullName;
+        try
+        {
+            string Script(string name, string body)
+            {
+                var path = Path.Combine(dir, name);
+                File.WriteAllText(path, "#!/bin/sh\n" + body + "\n");
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+                return path;
+            }
+
+            // 1 MB on stderr, far past a pipe's buffer, then the length.
+            var chatty = Script("chatty", "head -c 1048576 /dev/zero >&2; echo 12.5");
+            using var quick = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            Assert.Equal(12.5, await BumpClips.ProbeAsync(chatty, "x.mp4", quick.Token));
+
+            var pidFile = Path.Combine(dir, "pid");
+            var stalled = Script("stalled", $"echo $$ > {pidFile}; exec sleep 30");
+            using var soon = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => BumpClips.ProbeAsync(stalled, "x.mp4", soon.Token));
+            var pid = int.Parse(File.ReadAllText(pidFile).Trim(), CultureInfo.InvariantCulture);
+            Assert.False(Directory.Exists($"/proc/{pid}"), "a timed-out probe must not keep running");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
     private sealed class ManualTime : TimeProvider
     {
         private DateTimeOffset _now = DateTimeOffset.UnixEpoch;
