@@ -59,7 +59,8 @@ repository; you stay on the test build until the next release.
 
 - The film that is on spelunkr.tv right now, at the same minute, plus the ads and the short text "bumps" between
   films, and the "up next" cards some channels show between shorts. Bumps and cards are drawn as plain cards in
-  the channel's color; the site's pixel-art animations aren't included.
+  the channel's color, with the site's archive film clip under a bump's words when it has one; the site's pixel-art
+  animations aren't included.
 - A guide listing each film or show from when it starts until the next one starts, with its poster from the
   Internet Archive and, where Spelunkr wrote one, a description with director and cast.
 - A sharper picture than the site's own: where the Internet Archive has a better-quality original of a film,
