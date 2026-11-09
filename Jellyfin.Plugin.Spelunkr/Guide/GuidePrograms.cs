@@ -15,8 +15,7 @@ internal static class GuidePrograms
     /// <param name="segments">Schedule segments, in order.</param>
     /// <param name="channelId">Jellyfin channel id.</param>
     /// <param name="details">Spelunkr's write-up of a film, if known.</param>
-    /// <param name="films">Whether the channel shows feature films (marked as movies in the guide) rather than episodes and shorts.</param>
-    public static List<ProgramInfo> Build(IReadOnlyList<Segment> segments, string channelId, Func<Segment, ItemDetails?>? details = null, bool films = true)
+    public static List<ProgramInfo> Build(IReadOnlyList<Segment> segments, string channelId, Func<Segment, ItemDetails?>? details = null)
     {
         var shows = segments.Where(s => s.Kind == "show").ToList();
         var programs = new List<ProgramInfo>(shows.Count);
@@ -33,7 +32,9 @@ internal static class GuidePrograms
                 StartDate = DateTimeOffset.FromUnixTimeMilliseconds(s.StartMs).UtcDateTime,
                 EndDate = DateTimeOffset.FromUnixTimeMilliseconds(endMs).UtcDateTime,
                 ProductionYear = int.TryParse(s.Year, NumberStyles.Integer, CultureInfo.InvariantCulture, out var y) ? y : null,
-                IsMovie = films,
+                // Never a movie, even on film channels: Jellyfin collects movies into a "Movies" row on the Live TV
+                // home, which reads as a library to pick from, and Spelunkr is channels only (#32).
+                IsMovie = false,
                 Overview = Overview(details?.Invoke(s)),
                 // The poster spelunkr.tv itself shows for an archive.org item.
                 ImageUrl = "https://archive.org/services/img/" + Uri.EscapeDataString(s.Id),

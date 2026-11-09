@@ -31,13 +31,17 @@ continuous TV stream.
   `FfmpegProcess` runs one job and measures what it wrote, `BumpCards` times the bump text, `Pacing` keeps the
   stream on the wall clock, `ArchiveOriginals` finds a film's better original file on archive.org, `CabinetArt`
   puts the channel's logo on the TV cabinet image.
-- **Settings** (`Plugin.cs`, `configPage.html`): one switch, "Show the TV cabinet", on Jellyfin's plugin page.
+- **Live TV landing** (`LiveTvLanding.cs`): on startup, and when an account is created, gives every account with
+  no Live TV default screen the Guide (jellyfin-web's `landing-livetv` preference). An existing value is never changed.
+- **Settings** (`Plugin.cs`, `configPage.html`): two switches on Jellyfin's plugin page, "Show the TV cabinet" and
+  "Open Live TV on the guide".
 
 ## Data flow
 
 1. Startup: Registration adds the tuner and guide entries if missing (and points the guide entry at the current
    tuner if the tuner was recreated), then queues a guide refresh on every start, since Spelunkr may have published
-   a new schedule version while Jellyfin was off. The refresh calls the guide source, which asks SpelunkrSource for
+   a new schedule version while Jellyfin was off. If "Open Live TV on the guide" is on, LiveTvLanding fills in the Guide for
+   accounts with no Live TV default screen. The refresh calls the guide source, which asks SpelunkrSource for
    the next days of segments, reaching past the window's edges so the first and last films are whole. While
    running, a newly published version triggers another refresh.
 2. Tune in: Jellyfin calls the tuner, which picks the stream's format from Jellyfin's encoding settings and opens
@@ -87,6 +91,10 @@ continuous TV stream.
   so a GPU failure costs sharpness, not the film. Other kinds of hardware acceleration (NVENC, QSV...) use the CPU
   path at 720p. The media source declares the stream's real size and codec with probing off: Jellyfin caches a
   probed live stream's details per channel and never refreshes them, so a probed channel kept saying 720p.
+- **Live TV landing is a per-account preference.** Jellyfin has no server-wide default screen for Live TV; the web
+  client stores each person's choice in their display preferences (id `usersettings`, client `emby`, which the server
+  keys by `"usersettings".GetMD5()`). The plugin only adds the key where it is missing, because Jellyfin replaces the
+  whole set on write, and can't tell an untouched Programs from a chosen one, so any value counts as a choice.
 - **Pacing:** ffmpeg reads at playback speed after a 10-second head start; the stream may run up to 30 s ahead of
   the clock and skips forward if it falls more than 15 s behind.
 

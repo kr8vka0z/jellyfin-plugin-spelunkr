@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Spelunkr</title>
+    <title>Spelunkr TV</title>
 </head>
 <body>
     <div id="SpelunkrConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
@@ -16,6 +16,15 @@
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">
                             Plays every channel inside a wood-grain TV. Applies the next time a channel is opened with nobody watching it.
+                        </div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="OpenLiveTvOnGuide" type="checkbox" is="emby-checkbox" />
+                            <span>Open Live TV on the guide</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Anyone who hasn't picked a Live TV default screen opens Live TV on the Guide, checked when Jellyfin starts and when an account is created. Choices people made are never changed, and turning this off undoes nothing.
                         </div>
                     </div>
                     <div>
@@ -33,6 +42,7 @@
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                         document.querySelector('#ShowCabinet').checked = config.ShowCabinet;
+                        document.querySelector('#OpenLiveTvOnGuide').checked = config.OpenLiveTvOnGuide;
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -41,6 +51,7 @@
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                         config.ShowCabinet = document.querySelector('#ShowCabinet').checked;
+                        config.OpenLiveTvOnGuide = document.querySelector('#OpenLiveTvOnGuide').checked;
                         ApiClient.updatePluginConfiguration(pluginId, config).then(Dashboard.processPluginConfigurationUpdateResult);
                     });
                     return false;

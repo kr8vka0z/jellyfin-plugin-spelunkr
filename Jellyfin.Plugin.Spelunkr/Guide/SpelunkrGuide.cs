@@ -17,7 +17,7 @@ public sealed class SpelunkrGuide : IListingsProvider
     public SpelunkrGuide(SpelunkrSource source) => _source = source;
 
     /// <inheritdoc />
-    public string Name => "Spelunkr";
+    public string Name => "Spelunkr TV";
 
     /// <inheritdoc />
     public string Type => ProviderType;
@@ -49,8 +49,7 @@ public sealed class SpelunkrGuide : IListingsProvider
             segments.Add(await _source.SegmentAtAsync(id, segments[^1].EndMs, cancellationToken).ConfigureAwait(false));
         }
 
-        var films = (await _source.GetChannelsAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault(c => c.Id == id)?.Family == "film";
-        return GuidePrograms.Build(segments, channelId, s => _source.Details(id, s), films).Where(p => p.EndDate > startDateUtc && p.StartDate < endDateUtc).ToList();
+        return GuidePrograms.Build(segments, channelId, s => _source.Details(id, s)).Where(p => p.EndDate > startDateUtc && p.StartDate < endDateUtc).ToList();
     }
 
     /// <inheritdoc />

@@ -1,4 +1,4 @@
-// Plugin: the plugin's identity for Jellyfin (name, id) and its one setting, with the dashboard page that changes it.
+// Plugin: the plugin's identity for Jellyfin (name, id) and its settings, with the dashboard page that changes it.
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
@@ -11,6 +11,9 @@ public sealed class PluginConfiguration : BasePluginConfiguration
 {
     /// <summary>Gets or sets a value indicating whether newly opened streams play inside the TV cabinet.</summary>
     public bool ShowCabinet { get; set; } = true;
+
+    /// <summary>Gets or sets a value indicating whether accounts with no Live TV default screen are set to open on the guide.</summary>
+    public bool OpenLiveTvOnGuide { get; set; } = true;
 }
 
 /// <summary>Spelunkr for Jellyfin.</summary>
@@ -30,7 +33,7 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public static Plugin? Instance { get; private set; }
 
     /// <inheritdoc />
-    public override string Name => "Spelunkr";
+    public override string Name => "Spelunkr TV";
 
     /// <inheritdoc />
     public override Guid Id => PluginId;

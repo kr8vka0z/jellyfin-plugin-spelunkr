@@ -45,7 +45,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
     }
 
     /// <inheritdoc />
-    public string Name => "Spelunkr";
+    public string Name => "Spelunkr TV";
 
     /// <inheritdoc />
     public string Type => TunerType;

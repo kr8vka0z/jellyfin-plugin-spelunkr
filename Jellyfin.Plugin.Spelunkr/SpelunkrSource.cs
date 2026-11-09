@@ -258,10 +258,10 @@ public sealed partial class SpelunkrSource
 }
 
 /// <summary>Spelunkr's write-up of one film, from a version's details file (same order as the manifest's items).</summary>
-public sealed record ItemDetails(string? Description, string? Director, IReadOnlyList<string>? Stars, string? ImdbId);
+public sealed record ItemDetails(string? Description, string? Director, IReadOnlyList<string>? Stars);
 
 /// <summary>Spelunkr's lineup.json (only the fields this plugin reads).</summary>
-public sealed record Lineup(string AudioBase, int Engine, IReadOnlyList<LineupChannel> Channels);
+public sealed record Lineup(string AudioBase, IReadOnlyList<LineupChannel> Channels);
 
 /// <summary>One channel in the lineup.</summary>
 public sealed record LineupChannel(
@@ -270,7 +270,6 @@ public sealed record LineupChannel(
     string Color,
     int? Dial,
     IReadOnlyList<JsonElement> Versions,
-    string? Family = null,
     bool ComingSoon = false,
     bool DebugOnly = false,
     bool AudioOverlay = false,

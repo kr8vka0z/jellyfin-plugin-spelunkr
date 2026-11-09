@@ -23,8 +23,8 @@
 
 ## Branches
 
-New work: branch from `dev`, PR into `dev`. Each push to `dev` makes a test build (one exception under The two feeds). Only three things reach `main`:
-a release PR, a breakage fix, and the bots' own feed commits. Never PR `dev` itself into `main`.
+New work: branch from `dev`, PR into `dev`. Each push to `dev` makes a test build (one exception under The two feeds). Only four things reach `main`:
+a release PR, a breakage fix, the bots' own feed commits, and a catalog-text PR (under The two feeds). Never PR `dev` itself into `main`.
 
 ## Releases
 
@@ -44,13 +44,17 @@ A release starts only when the maintainer says so.
 ## The two feeds
 
 - `manifest.json`: the public feed. Real releases only, and only the release job writes it, on `main`. `dev` gets
-  it by the copy-back and never edits it.
+  it by the copy-back and never edits it. One exception: the catalog text (`name`, `description`, `overview`, never
+  `guid` or a version entry) changes by a PR into `main`, opened only once a published release does what the new
+  text says, linking its spec and merged by the maintainer.
 - `manifest-dev.json`: the test feed, on `dev` only, holding just the newest test build. `test-build.yml` writes it.
   The release commit removes it, so it never reaches `main`, and it is ignored when comparing `dev` with `main`.
 - Test builds: `v<base>-dev.<run>` becomes Jellyfin version `<base>.<run>`, where base is the newest release the
   built code contains. That is above that release and below the next (`testVersion` in `tools/release/feed.ts`
   says why). Until a release or hotfix is copied back into `dev`, test builds stay below it, because they lack it.
 - A re-run of an old test build stops itself instead of replacing a newer one in the feed.
+- A branch operation that changes no files starts no test build. Any push that changes a file outside the two
+  manifests starts one, including a reset.
 - While `dev`'s `.github/workflows/` differ from `main`'s, GitHub refuses the job's token the new tag, so the test
   build goes red. To recover, take the tag from the failed run, have an account with workflow permission run
   `gh release create <tag> --prerelease --latest=false --target <commit> --notes "Test build of <commit>."`, then
