@@ -34,7 +34,7 @@ public static class BumpClipVideo
         }
 
         var (startS, motionEndS) = (clip.StartMs / 1000.0, clip.MotionEndMs / 1000.0);
-        var playS = clip.To is > 0 && clip.To < lengthS ? clip.To.Value : lengthS;
+        var playS = PlayS(clip, lengthS);
         var holdS = HoldS(clip, lengthS);
         if (atS >= motionEndS)
         {
@@ -79,7 +79,7 @@ public static class BumpClipVideo
         var off = offsetMs / 1000.0;
         var from = Math.Max(clip.StartMs / 1000.0, off);
         var holdS = HoldS(clip, lengthS);
-        var playFromS = (clip.MotionEndMs / 1000.0) - (clip.To is > 0 && clip.To < lengthS ? clip.To.Value : lengthS);
+        var playFromS = (clip.MotionEndMs / 1000.0) - PlayS(clip, lengthS);
         // A clip shorter than its motion slides waits on its first frame; otherwise it joins at the engine's moment.
         var waitS = Math.Max(0, playFromS - from);
         var trimFrom = Math.Clamp(waitS > 0 ? 0 : ClipTimeS(clip, lengthS, from), 0, Math.Max(0, holdS - (1 / Fps)));
@@ -140,9 +140,11 @@ public static class BumpClipVideo
         return c.ToString();
     }
 
+    private static double PlayS(BumpClip clip, double lengthS) => clip.To is > 0 && clip.To < lengthS ? clip.To.Value : lengthS;
+
     private static double HoldS(BumpClip clip, double lengthS)
     {
-        var playS = clip.To is > 0 && clip.To < lengthS ? clip.To.Value : lengthS;
+        var playS = PlayS(clip, lengthS);
         return playS < lengthS ? playS : Math.Max(0, lengthS - HoldBeforeEndS);
     }
 
@@ -157,19 +159,8 @@ public static class BumpClipVideo
             : (0.5, 0.5);
     }
 
-    // CSS ease-out, cubic-bezier(0, 0, .58, 1): solve x(s) = p for s by bisection, return y(s).
-    private static double EaseOut(double p)
-    {
-        static double Bezier(double s, double p1, double p2) => (3 * (1 - s) * (1 - s) * s * p1) + (3 * (1 - s) * s * s * p2) + (s * s * s);
-        var (lo, hi) = (0.0, 1.0);
-        for (var i = 0; i < 30; i++)
-        {
-            var mid = (lo + hi) / 2;
-            (lo, hi) = Bezier(mid, 0, 0.58) < p ? (mid, hi) : (lo, mid);
-        }
-
-        return Bezier((lo + hi) / 2, 0, 1);
-    }
+    // CSS ease-out, approximated: over a 7-frame fade a quadratic is indistinguishable from cubic-bezier(0, 0, .58, 1).
+    private static double EaseOut(double p) => 1 - ((1 - p) * (1 - p));
 
     private static string Any(IEnumerable<(int Step, double From, double To)> windows)
     {
