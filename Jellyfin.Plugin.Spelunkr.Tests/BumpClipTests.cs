@@ -249,9 +249,10 @@ public class BumpClipTests
     }
 
     [Fact]
-    [System.Runtime.Versioning.SupportedOSPlatform("linux")] // shell scripts stand in for ffprobe
     public async Task Probe_survives_a_chatty_stderr_and_is_killed_on_timeout()
     {
+        // Shell scripts stand in for ffprobe, and /proc shows whether the stalled one is gone: Linux only.
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "needs /bin/sh and /proc");
         var dir = Directory.CreateTempSubdirectory("spelunkr-probe").FullName;
         try
         {
@@ -259,7 +260,10 @@ public class BumpClipTests
             {
                 var path = Path.Combine(dir, name);
                 File.WriteAllText(path, "#!/bin/sh\n" + body + "\n");
-                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+                if (OperatingSystem.IsLinux())
+                {
+                    File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+                }
                 return path;
             }
 
