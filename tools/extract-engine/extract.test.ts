@@ -46,3 +46,20 @@ test("incident-2026-11-09-bump-clip-slice: the cut starts at the bump-clip helpe
   expect(engine).toContain("const P$=(e,t)=>e+t,A$=2500,");
   expect(engine).not.toContain("x$");
 });
+
+// The 2026-11-10 build opened the looks' `const` with the clip's word positions, added a fifth look ("widen") and gave
+// the clip span a third parameter. The cut must still start at that `const` (the planner reads the word positions).
+test("incident-2026-11-10-widen-look: the cut keeps lists before the looks and a longer looks list", () => {
+  const dir = mkdtempSync(join(tmpdir(), "extract-test-"));
+  const widened = bundle
+    .replace('const L$=["flash","duotone","zoom","duozoom"];', 'const W$=["centre","lower"],L$=["flash","duotone","zoom","duozoom","widen"];')
+    .replace("function $p(e,t){", "function $p(e,t,n=null){");
+  writeFileSync(join(dir, "bundle.js"), widened);
+  const out = join(dir, "engine.js");
+  const run = Bun.spawnSync(["bun", join(import.meta.dir, "extract.ts"), "--bundle", join(dir, "bundle.js"), "--out", out]);
+  expect(run.stderr.toString()).not.toContain("anchor");
+  expect(run.exitCode).toBe(0);
+  const engine = readFileSync(out, "utf8");
+  expect(engine).toContain('\nconst W$=["centre","lower"],L$=["flash","duotone","zoom","duozoom","widen"];');
+  expect(engine).toContain("$p as clipSpan");
+});

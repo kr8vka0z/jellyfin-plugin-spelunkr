@@ -57,8 +57,10 @@ function once(label: string, re: RegExp): RegExpExecArray {
 // Slice 1: bump-clip helpers, constants, RNG, bump/ad planners, version registry, cycle builder, lookup (Qt) and
 // walker (to). Since the 2026-11-09 build the bump planner asks the bump-clip helpers which music track a clip names,
 // so the slice starts at their list of clip looks, and the minifier folds the timing constants into that same
-// `const` (hence the lookbehind instead of a leading "const ").
-const start1 = once("bump-clip looks", /const [\w$]+=\["flash","duotone","zoom","duozoom"\]/);
+// `const` (hence the lookbehind instead of a leading "const "). Since the 2026-11-10 build that `const` opens with the
+// clip's word positions and the looks list has grown ("widen"), so the anchor allows other lists before it and more
+// looks after the first four.
+const start1 = once("bump-clip looks", /const (?:[\w$]+=\[[^\]]*\],)*[\w$]+=\["flash","duotone","zoom","duozoom"[,\]]/);
 const timing = once("slide-timing constants", /(?<=const |,)[\w$]+=2500,[\w$]+=1500,[\w$]+=55,([\w$]+)=300,[\w$]+=2e3,([\w$]+)=3500,([\w$]+)=1e3,/);
 const walker = once("schedule walker", /function\*([\w$]+)\(e,t\)\{let n=t;for\(;;\)\{const r=([\w$]+)\(e,n\);yield r,n=r\.endMs\}\}/);
 // Slice 2: archive.org download URL.
@@ -103,7 +105,7 @@ const names = {
 // inside one function body.
 const clips = {
   clipOf: inSlice1("clip of a bump", /function ([\w$]+)\(e\)\{[^}]*?\.under\)===!0/)[1],
-  clipSpan: inSlice1("clip span", /function ([\w$]+)\(e,t\)\{[^}]*?phase==="channel"[^}]*?motionEndS:/)[1],
+  clipSpan: inSlice1("clip span", /function ([\w$]+)\(e,t(?:,n=null)?\)\{[^}]*?phase==="channel"[^}]*?motionEndS:/)[1],
   clipAt: inSlice1("clip time", /function ([\w$]+)\(e,t,n,r=null\)\{[^}]*?playing:!1/)[1],
   holdStep: inSlice1("hold step", /(?:const |,)([\w$]+)=\(e,t\)=>!e\|\|t<e\.first\+e\.motion\?-1:/)[1],
   wordsHidden: inSlice1("words hidden", /(?:const |,)([\w$]+)=\(e,t\)=>[\w$]+\(e,t\)&&!e\.wordsOver/)[1],
