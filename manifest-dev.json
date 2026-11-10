@@ -8,12 +8,12 @@
     "category": "Live TV",
     "versions": [
       {
-        "version": "0.4.0.10",
-        "changelog": "https://github.com/kr8vka0z/jellyfin-plugin-spelunkr/commit/fadced007965d7102977e175837075d19e15337f",
+        "version": "0.4.0.11",
+        "changelog": "https://github.com/kr8vka0z/jellyfin-plugin-spelunkr/commit/e05f45e53fab4c31eb9e90e9628cdf17b070f5d4",
         "targetAbi": "12.3.0.0",
-        "sourceUrl": "https://github.com/kr8vka0z/jellyfin-plugin-spelunkr/releases/download/v0.4.0-dev.10/jellyfin-plugin-spelunkr_0.4.0.10.zip",
-        "checksum": "7feb13028b7ebfe22996f41bc4ce3bd5",
-        "timestamp": "2026-11-09T23:11:43Z"
+        "sourceUrl": "https://github.com/kr8vka0z/jellyfin-plugin-spelunkr/releases/download/v0.4.0-dev.11/jellyfin-plugin-spelunkr_0.4.0.11.zip",
+        "checksum": "02f3014db009305a2ab1b180c0028d5d",
+        "timestamp": "2026-11-10T00:12:22Z"
       }
     ]
   }
