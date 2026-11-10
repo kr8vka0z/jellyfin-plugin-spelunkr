@@ -37,8 +37,11 @@ internal static class SegmentPlayer
     /// <paramref name="run"/> runs one ffmpeg job and returns how many ms it emitted. Returns the ms emitted in total:
     /// less than asked only when every fallback failed; StreamPump then carries on from what was written.
     /// </summary>
-    /// <remarks><paramref name="originalUrl"/> is looked up once by the caller, never per job: see <see cref="FfmpegJobs.For"/>.</remarks>
-    public static async Task<long> PlayAsync(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS, Func<FfmpegJob, CancellationToken, Task<long>> run, ILogger logger, CancellationToken ct, string? originalUrl = null, Picture? picture = null, Action? originalFailed = null)
+    /// <remarks>
+    /// <paramref name="originalUrl"/> and <paramref name="clip"/> are looked up once by the caller, never per job: see
+    /// <see cref="FfmpegJobs.For"/>. A clip job that fails moves on to today's bump jobs like any other fallback.
+    /// </remarks>
+    public static async Task<long> PlayAsync(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS, Func<FfmpegJob, CancellationToken, Task<long>> run, ILogger logger, CancellationToken ct, string? originalUrl = null, Picture? picture = null, Action? originalFailed = null, ReadyClip? clip = null)
     {
         var done = 0L;
         var level = 0;
@@ -47,7 +50,7 @@ internal static class SegmentPlayer
         var originalLevels = originalUrl is null ? 0 : picture?.VaapiDevice is null ? 1 : 2;
         while (durationMs - done >= MinJobMs)
         {
-            var jobs = FfmpegJobs.For(segment, look, offsetMs + done, durationMs - done, outputOffsetS + (done / 1000.0), originalUrl, picture);
+            var jobs = FfmpegJobs.For(segment, look, offsetMs + done, durationMs - done, outputOffsetS + (done / 1000.0), originalUrl, picture, clip);
             if (level >= jobs.Count)
             {
                 logger.LogError("Spelunkr: every fallback failed for {Kind} {Id} with {Seconds} s still to play", segment.Kind, segment.Id, (durationMs - done) / 1000);

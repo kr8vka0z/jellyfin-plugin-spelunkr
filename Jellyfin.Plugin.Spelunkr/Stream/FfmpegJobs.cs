@@ -73,7 +73,11 @@ public static class FfmpegJobs
     /// player picks fallbacks by position in this list.
     /// </param>
     /// <param name="picture">The stream's format; CPU 720p when not given.</param>
-    public static IReadOnlyList<FfmpegJob> For(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS, string? originalUrl = null, Picture? picture = null)
+    /// <param name="clip">
+    /// The bump's clip, downloaded (see <see cref="BumpClips"/>): its job goes first, ahead of today's jobs, which stay as
+    /// they are. Like <paramref name="originalUrl"/> it must stay the same for every call about one segment.
+    /// </param>
+    public static IReadOnlyList<FfmpegJob> For(Segment segment, ChannelLook look, long offsetMs, long durationMs, double outputOffsetS, string? originalUrl = null, Picture? picture = null, ReadyClip? clip = null)
     {
         var p = picture ?? Picture.Cpu;
         // Each entry builds one job, for the GPU (true) or the CPU (false).
@@ -108,6 +112,11 @@ public static class FfmpegJobs
                 // here the channel's track plays under both halves.
                 var music = segment.Kind == "up-next" ? segment.Sting
                     : segment.Half == "close" ? segment.Platform?.Audio : segment.Channel?.Audio ?? segment.Platform?.Audio;
+                if (segment.Kind == "bump" && segment.Clip is { } plan && clip is not null)
+                {
+                    jobs.Add(ClipJob(segment, plan, clip, music, look, p, offsetMs, durationMs, outputOffsetS));
+                }
+
                 if (music is not null)
                 {
                     jobs.Add(gpu => new(
@@ -154,6 +163,23 @@ public static class FfmpegJobs
 
     private static readonly Dictionary<string, string> Empty = [];
 
+    // The bump with its clip under the channel slides: input 0 the channel color, 1 the music (or silence), 2 the clip's
+    // local file, then the cabinet. The clip is a local file so a slow archive.org can never hold up the break.
+    private static Func<bool, FfmpegJob> ClipJob(Segment segment, BumpClip plan, ReadyClip clip, BumpAudio? music, ChannelLook look, Picture p, long offsetMs, long durationMs, double outputOffsetS)
+    {
+        var (w, h) = p.Cabinet is null ? (p.Width, p.Height) : (p.TubeWidth, p.TubeHeight);
+        var under = BumpClipVideo.Under(plan, clip.LengthS, offsetMs, w, h, 2, look.Color);
+        var (filter, files) = Cards(BumpCards.WithClip(segment, look), look, offsetMs, p, under);
+        string[] audioIn = music is null
+            ? ["-f", "lavfi", "-i", Silence]
+            : [.. Remote, "-ss", Seconds((music.StartOffsetS * 1000) + offsetMs), "-i", music.Url];
+        var audio = music is null ? string.Empty : $";[1:a]{Audio},apad[a]";
+        return gpu => new(
+            [.. Head, .. CardDevices(p, gpu), .. Color(look, p), .. audioIn, "-i", clip.Path,
+             .. CardVideo(p, gpu, filter, audio, 3), "-map", "[v]", "-map", music is null ? "1:a" : "[a]", .. Encode(p, gpu, durationMs, outputOffsetS)],
+            files);
+    }
+
     // A card over the channel color with silence: a bump with no music, the title slate, and the tuning-in card.
     private static FfmpegJob SilentCard(Picture p, bool gpu, ChannelLook look, string filter, Dictionary<string, string> files, long durationMs, double outputOffsetS) =>
         new([.. Head, .. CardDevices(p, gpu), .. Color(look, p), "-f", "lavfi", "-i", Silence, .. CardVideo(p, gpu, filter), "-map", "[v]", "-map", "1:a", .. Encode(p, gpu, durationMs, outputOffsetS)], files);
@@ -195,8 +221,8 @@ public static class FfmpegJobs
         ? ["-map", "0:v:0", "-vf", Film(p, gpu)]
         : [.. CabinetInput(p), "-filter_complex", Framed(p, gpu, "[0:v]" + (gpu ? Denoised : TubeFit(p)), cabinetInput), "-map", "[v]"];
 
-    private static string[] CardVideo(Picture p, bool gpu, string card, string more = "") =>
-        [.. CabinetInput(p), "-filter_complex", (p.Cabinet is null ? card + Upload(gpu) + "[v]" : Framed(p, gpu, card, 2)) + more];
+    private static string[] CardVideo(Picture p, bool gpu, string card, string more = "", int cabinetInput = 2) =>
+        [.. CabinetInput(p), "-filter_complex", (p.Cabinet is null ? card + Upload(gpu) + "[v]" : Framed(p, gpu, card, cabinetInput)) + more];
 
     /// <summary>
     /// Draws the cabinet over <paramref name="video"/>, which is a filter chain ending in a yuv420p picture, and
@@ -253,7 +279,7 @@ public static class FfmpegJobs
     private static string Kbps(int k) => k.ToString(CultureInfo.InvariantCulture) + "k";
 
     /// <summary>drawtext filters for the cards, timed relative to the job start (the segment start + offset).</summary>
-    private static (string Filter, Dictionary<string, string> Files) Cards(IReadOnlyList<BumpCard> cards, ChannelLook look, long offsetMs, Picture p)
+    private static (string Filter, Dictionary<string, string> Files) Cards(IReadOnlyList<BumpCard> cards, ChannelLook look, long offsetMs, Picture p, string background = "[0:v]format=yuv420p")
     {
         // Sizes are set for a 720-line frame and scaled with it, so a card looks the same at 1080p (and wraps the same).
         // In the narrower tube the words shrink less than the width does, so they wrap sooner.
@@ -261,7 +287,7 @@ public static class FfmpegJobs
         var fontSize = font * p.Height / 720;
         var lineSpacing = spacing * p.Height / 720;
         var files = new Dictionary<string, string>();
-        var parts = new List<string> { "[0:v]format=yuv420p" };
+        var parts = new List<string> { background };
         foreach (var card in cards.Where(c => c.EndMs > offsetMs))
         {
             // Text goes through files named in the job's working folder: drawtext's inline quoting rules
@@ -270,11 +296,13 @@ public static class FfmpegJobs
             files[name] = Wrap(card.Text, wrap);
             parts.Add(string.Create(
                 CultureInfo.InvariantCulture,
-                $"drawtext=textfile={name}:expansion=none:fontcolor={TextColor(look.Color)}:fontsize={fontSize}:line_spacing={lineSpacing}:text_align=C:x=(w-tw)/2:y=(h-th)/2:enable='gte(t,{(card.StartMs - offsetMs) / 1000.0:0.000})*lt(t,{(card.EndMs - offsetMs) / 1000.0:0.000})'"));
+                $"drawtext=textfile={name}:expansion=none:fontcolor={(card.Color is null ? TextColor(look.Color) : Hex(card.Color))}{(card.Outline is null ? string.Empty : $":borderw={2 * p.Height / 720}:bordercolor={Hex(card.Outline)}")}:fontsize={fontSize}:line_spacing={lineSpacing}:text_align=C:x=(w-tw)/2:y=(h-th)/2:enable='gte(t,{(card.StartMs - offsetMs) / 1000.0:0.000})*lt(t,{(card.EndMs - offsetMs) / 1000.0:0.000})'"));
         }
 
         return (string.Join(",", parts), files);
     }
+
+    private static string Hex(string color) => "0x" + color.TrimStart('#');
 
     /// <summary>Dark text on light channel colors, light text on dark ones.</summary>
     private static string TextColor(string color)

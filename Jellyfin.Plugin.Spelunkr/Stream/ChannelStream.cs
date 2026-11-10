@@ -27,6 +27,7 @@ internal sealed class ChannelStream : ILiveStream
     private readonly Picture _picture;
     private readonly SpelunkrSource _source;
     private readonly ArchiveOriginals _originals;
+    private readonly BumpClips _clips;
     private readonly string _ffmpegPath;
     private readonly string _workDir;
     private readonly string _filePath;
@@ -36,13 +37,14 @@ internal sealed class ChannelStream : ILiveStream
     private Task? _pump;
     private DateTime _openedUtc;
 
-    public ChannelStream(string channelId, ChannelLook look, Picture picture, MediaSourceInfo mediaSource, string tunerHostId, SpelunkrSource source, ArchiveOriginals originals, string ffmpegPath, string streamsDir, IServerApplicationHost appHost, ILogger logger)
+    public ChannelStream(string channelId, ChannelLook look, Picture picture, MediaSourceInfo mediaSource, string tunerHostId, SpelunkrSource source, ArchiveOriginals originals, BumpClips clips, string ffmpegPath, string streamsDir, IServerApplicationHost appHost, ILogger logger)
     {
         _channelId = channelId;
         _look = look;
         _picture = picture;
         _source = source;
         _originals = originals;
+        _clips = clips;
         _ffmpegPath = ffmpegPath;
         _appHost = appHost;
         _logger = logger;
@@ -118,18 +120,23 @@ internal sealed class ChannelStream : ILiveStream
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     (atMs, c) => _source.SegmentAtAsync(_channelId, atMs, c),
-                    async (segment, offsetMs, durationMs, outputS, c) => await SegmentPlayer.PlayAsync(
-                        segment,
-                        _look,
-                        offsetMs,
-                        durationMs,
-                        outputS,
-                        Run,
-                        _logger,
-                        c,
-                        segment.Url is null ? null : await _originals.FindAsync(segment.Url, c).ConfigureAwait(false),
-                        _picture,
-                        () => _originals.Reject(segment.Url!)).ConfigureAwait(false),
+                    async (segment, offsetMs, durationMs, outputS, c) =>
+                    {
+                        PrefetchClips(segment);
+                        return await SegmentPlayer.PlayAsync(
+                            segment,
+                            _look,
+                            offsetMs,
+                            durationMs,
+                            outputS,
+                            Run,
+                            _logger,
+                            c,
+                            segment.Url is null ? null : await _originals.FindAsync(segment.Url, c).ConfigureAwait(false),
+                            _picture,
+                            () => _originals.Reject(segment.Url!),
+                            segment.Clip is { } clip ? _clips.Ready(clip.Src) : null).ConfigureAwait(false);
+                    },
                     (segment, durationMs, c) => SegmentPlayer.PlayTuningInAsync(segment, _look, durationMs, Run, c, _picture),
                     Task.Delay,
                     ct).ConfigureAwait(false);
@@ -148,6 +155,33 @@ internal sealed class ChannelStream : ILiveStream
         {
             EnableStreamSharing = false;
         }
+    }
+
+    /// <summary>
+    /// Starts downloading the clips of this segment and the next, so a break's clip is usually on disk by the time the
+    /// film before it ends. Runs in the background; a failure only means the break plays without its clip.
+    /// </summary>
+    private void PrefetchClips(Segment segment)
+    {
+        if (segment.Clip is { } clip)
+        {
+            _ = _clips.Prefetch(clip.Src);
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if ((await _source.SegmentAtAsync(_channelId, segment.EndMs, _cts.Token).ConfigureAwait(false)).Clip is { } next)
+                {
+                    _ = _clips.Prefetch(next.Src);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Spelunkr {Channel}: no look-ahead for bump clips", _channelId);
+            }
+        });
     }
 
     private void TryDelete(Action delete)

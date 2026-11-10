@@ -9,7 +9,10 @@ import { join } from "node:path";
 // build: the bump-clip helpers come first and the timing constants sit mid-way in their `const`.
 const bundle = [
   "var x$=0;",
-  'const L$=["flash","duotone","zoom","duozoom"];function $k(e){return L$[0]}const P$=(e,t)=>e+t,',
+  'const L$=["flash","duotone","zoom","duozoom"];function $k(e){return L$[0]}',
+  'function $c(e){return(e==null?void 0:e.under)===!0}function $p(e,t){return e.filter(s=>s.phase==="channel").map(s=>({motionEndS:s.endS}))}',
+  "function $d(e,t,n,r=null){return{t:0,playing:!1}}const $h=(e,t)=>!e||t<e.first+e.motion?-1:t,$f=(e,t)=>$c(e,t)&&!e.wordsOver;",
+  "const P$=(e,t)=>e+t,",
   "A$=2500,B$=1500,C$=55,$g=300,D$=2e3,$e=3500,$s=1e3,",
   "F$=1;function $m(e){return Math.max(A$,B$+e.length*C$)}const $t=1e3,G$=2;",
   "function $r(e,t=[]){const n={channelId:e,versions:[]};for(const r of t)$a(n,r);return n}",

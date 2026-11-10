@@ -98,14 +98,26 @@ const names = {
   GAP_MS: gapName,
 };
 
-const exportList = Object.entries(names).map(([alias, name]) => `${name} as ${alias}`).join(", ");
+// The bump-clip helpers the site's bump renderer uses (2026-11-09 build), keyed on the property names they read, which
+// survive a rebuild. They go on their own export line so the line above keeps its shape. `[^}]*?` keeps each match
+// inside one function body.
+const clips = {
+  clipOf: inSlice1("clip of a bump", /function ([\w$]+)\(e\)\{[^}]*?\.under\)===!0/)[1],
+  clipSpan: inSlice1("clip span", /function ([\w$]+)\(e,t\)\{[^}]*?phase==="channel"[^}]*?motionEndS:/)[1],
+  clipAt: inSlice1("clip time", /function ([\w$]+)\(e,t,n,r=null\)\{[^}]*?playing:!1/)[1],
+  holdStep: inSlice1("hold step", /(?:const |,)([\w$]+)=\(e,t\)=>!e\|\|t<e\.first\+e\.motion\?-1:/)[1],
+  wordsHidden: inSlice1("words hidden", /(?:const |,)([\w$]+)=\(e,t\)=>[\w$]+\(e,t\)&&!e\.wordsOver/)[1],
+};
+
+const exportsOf = (o: Record<string, string>) => Object.entries(o).map(([alias, name]) => `${name} as ${alias}`).join(", ");
 const text = [
   "// engine.js: Spelunkr's schedule engine, cut VERBATIM from the spelunkr.tv bundle by tools/extract-engine.",
   "// Generated file: do not edit by hand. Re-run `bun tools/extract-engine/extract.ts` instead.",
   slice1,
   slice2,
   slice3 + ";",
-  `export { ${exportList} };`,
+  `export { ${exportsOf(names)} };`,
+  `export { ${exportsOf(clips)} };`,
   "",
 ].join("\n");
 

@@ -1,6 +1,6 @@
 // schedule.js: the small hand-written wrapper over engine.js. The plugin runs it in Jint and tools/oracle runs
 // it in Bun, so both read the schedule through the same code. Data crosses in and out as JSON strings.
-import { createRegistry, addVersion, lookup, walk, buildVersion, archiveUrl, slideMs, LEAD_IN_MS, TAIL_A_MS, TAIL_B_MS, GAP_MS } from "./engine.js";
+import { createRegistry, addVersion, lookup, walk, buildVersion, archiveUrl, slideMs, LEAD_IN_MS, TAIL_A_MS, TAIL_B_MS, GAP_MS, clipOf, clipSpan, holdStep, wordsHidden } from "./engine.js";
 
 /** An empty schedule for one channel; versions are added with addChannelVersion. */
 export function createChannel(channelId) {
@@ -19,6 +19,31 @@ export function addChannelVersion(channel, manifestJson, platformJson, pointerJs
 }
 
 const slides = (b) => b.slides.map((s) => ({ text: s.text, ms: slideMs(s.text) }));
+const ms = (s) => Math.round(s * 1000);
+
+/**
+ * A channel bump's clip, laid out the way the site's bump renderer does it, or null. The site times the channel slides
+ * from the end of the lead-in, giving the first slide an extra TAIL_A_MS; one entry per raw slide, so the engine's
+ * slide indexes (`first`, hold steps) line up. Times are ms from the bump's start.
+ */
+function clip(bump) {
+  const plan = clipOf(bump);
+  if (!plan) return null;
+  let at = LEAD_IN_MS / 1000;
+  const entries = bump.slides.map((s, i) => {
+    const e = { phase: "channel", startS: at, endS: at + slideMs(s.text) / 1000 + (i === 0 ? TAIL_A_MS / 1000 : 0) };
+    at = e.endS;
+    return e;
+  });
+  const span = clipSpan(entries, plan);
+  if (!span) return null;
+  return {
+    src: plan.src, to: plan.to, look: plan.look, wordsOver: plan.wordsOver, zoomAt: plan.zoomAt, first: plan.first, motion: plan.motion,
+    startMs: ms(span.startS), motionEndMs: ms(span.motionEndS), endMs: ms(span.endS),
+    slides: entries.map((e, i) => ({ startMs: ms(e.startS), endMs: ms(e.endS), holdStep: holdStep(plan, i), hidden: wordsHidden(plan, i) })),
+  };
+}
+
 const audio = (a, base) => a && { file: a.filename, url: base + encodeURIComponent(a.filename), startOffsetS: a.startOffset };
 
 /** One engine lookup result as a plain segment: what plays from startMs for lengthMs. */
@@ -36,6 +61,10 @@ function describe(channel, q, audioBase) {
       // after it, "full" = both back to back with no ad. Layout numbers are the engine's own constants.
       const out = { ...base, kind: "bump", half: it.half ?? "full", id: [it.channelBump?.id, it.platformBump?.id].filter(Boolean).join("+") };
       if (it.channelBump) out.channel = { id: it.channelBump.id, slides: slides(it.channelBump), audio: audio(it.channelAudio, audioBase) };
+      // Only a bump with a channel half gets a clip (the site's `half !== "close"`). The key is left out, not null,
+      // when there is none, so a bump without a clip describes exactly as before.
+      const c = it.channelBump && out.half !== "close" ? clip(it.channelBump) : null;
+      if (c) out.clip = c;
       if (it.platformBump) out.platform = { id: it.platformBump.id, slides: slides(it.platformBump), audio: audio(it.platformAudio, audioBase) };
       out.layout = { leadInMs: LEAD_IN_MS, tailMs: TAIL_A_MS + TAIL_B_MS, gapMs: GAP_MS };
       return out;

@@ -52,6 +52,9 @@ public sealed record Segment
     /// <summary>Gets the network-wide (spelunkr) bump, if any.</summary>
     public BumpPart? Platform { get; init; }
 
+    /// <summary>Gets the clip that plays under the channel half (open and full bumps whose slides name one).</summary>
+    public BumpClip? Clip { get; init; }
+
     /// <summary>Gets the bump timing constants.</summary>
     public BumpLayout? Layout { get; init; }
 
@@ -79,3 +82,27 @@ public sealed record BumpAudio(string File, string Url, double StartOffsetS);
 
 /// <summary>Bump timing: silent lead-in before the channel slides, tail after each part, gap between parts.</summary>
 public sealed record BumpLayout(long LeadInMs, long TailMs, long GapMs);
+
+/// <summary>
+/// An archive.org clip under a bump's channel slides, as the engine's clip helpers plan it. Times are ms from the bump's
+/// start, laid out the way the site's bump renderer lays out the channel slides (see schedule.js).
+/// </summary>
+/// <param name="Src">The clip's archive.org download URL.</param>
+/// <param name="To">Where the clip is cut off, seconds; null for its whole length.</param>
+/// <param name="Look">"flash", "duotone", "zoom" or "duozoom".</param>
+/// <param name="WordsOver">Whether the words show while the clip moves.</param>
+/// <param name="ZoomAt">The zoom's fixed point, "X% Y%"; null for the middle.</param>
+/// <param name="First">The slide the clip starts on.</param>
+/// <param name="Motion">How many slides, from <paramref name="First"/>, the clip plays over.</param>
+/// <param name="StartMs">When the clip comes into view.</param>
+/// <param name="MotionEndMs">When the clip ends and holds its last frame.</param>
+/// <param name="EndMs">When the clip leaves (the end of the last channel slide).</param>
+/// <param name="Slides">Each channel slide's timing, one per slide.</param>
+public sealed record BumpClip(string Src, double? To, string Look, bool WordsOver, string? ZoomAt, int First, int Motion, long StartMs, long MotionEndMs, long EndMs, IReadOnlyList<ClipSlide> Slides);
+
+/// <summary>One channel slide of a clip bump.</summary>
+/// <param name="StartMs">When it shows, ms from the bump's start.</param>
+/// <param name="EndMs">When it ends.</param>
+/// <param name="HoldStep">Which hold step it is after the clip ends (0, 1, ...), or -1 before that.</param>
+/// <param name="Hidden">Whether its words are hidden (while the clip moves, unless the clip allows words over it).</param>
+public sealed record ClipSlide(long StartMs, long EndMs, int HoldStep, bool Hidden);
