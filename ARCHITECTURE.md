@@ -30,7 +30,8 @@ continuous TV stream.
   Jellyfin serves to its players. `FfmpegJobs` builds the commands, `StreamPump` walks the schedule, `SegmentPlayer` walks the fallbacks,
   `FfmpegProcess` runs one job and measures what it wrote, `BumpCards` times the bump text, `Pacing` keeps the
   stream on the wall clock, `ArchiveOriginals` finds a film's better original file on archive.org, `CabinetArt`
-  puts the channel's logo on the TV cabinet image.
+  puts the channel's logo on the TV cabinet image, `BumpClips` downloads and measures bump clips ahead of their break,
+  `BumpClipVideo` draws a clip under the bump text.
 - **Live TV landing** (`LiveTvLanding.cs`): on startup, and when an account is created, gives every account with
   no Live TV default screen the Guide (jellyfin-web's `landing-livetv` preference). An existing value is never changed.
 - **Settings** (`Plugin.cs`, `configPage.html`): two switches on Jellyfin's plugin page, "Show the TV cabinet" and
@@ -68,6 +69,14 @@ continuous TV stream.
   can be written, not even the title card, the stream stops instead of retrying. Remote inputs have a 15 s read timeout, and a job that writes
   nothing for 15 s from its start, or for 45 s once it has written, is killed.
 - **Originals that fail.** This is the one exception to the GPU-then-CPU retry. Metadata can't catch every bad original, so one that fails during playback goes straight to Spelunkr's file and isn't offered again for 12 hours.
+- **Bump clips.** A bump's channel slide can name an archive.org clip that plays under the words, styled with one of
+  four looks (flash, duotone, zoom, duozoom). The engine's own clip helpers (exported by `tools/extract-engine`) plan
+  it, and `schedule.js` lays the channel slides out the site's way for it (the first slide gets an extra second, where
+  plain bumps keep a 2 s tail; the channel half lasts the same either way). Only the clock that needs the file's length
+  is ported to C# (`BumpClipVideo.ClipTimeS`), pinned by a test to the engine's function. The clip is downloaded and
+  ffprobed in the background when the segment before its break starts, and ffmpeg only ever reads the finished local
+  file, so archive.org can't hold up a break. A clip that isn't ready, or whose job fails, leaves the break as it is
+  without one: the clip job is put in front of the usual bump jobs, which stay unchanged behind it.
 - **Tuning-in card.** A stream opens with a 4 s card (channel color, name, the film that's on), drawn locally so the player gets a picture before the archive answers. It takes the schedule's first 4 s, so the film joins 4 s in and stays on schedule. If it can't be drawn the stream starts without it.
 - **Better source files.** Spelunkr links archive.org's compressed derivative (~1 Mbps). When the item's metadata
   names an original for it that is an MP4-family file (seekable over HTTP), the same length within 1 s (the
