@@ -61,6 +61,8 @@ public class NowPlayingTests
 
         Assert.Equal(4, lines.Count);
         Assert.EndsWith("…", lines[^1], StringComparison.Ordinal);
+        // The cut falls between words: every word shown is a whole word of the title.
+        Assert.All(string.Join(' ', lines).TrimEnd('…').Split(' '), w => Assert.Contains(w, np.Title.Split(' ')));
         Assert.Equal(NowPlaying.TitlePx, np.TitleSize);
         Assert.All(lines, l => Assert.True(NowPlaying.Ems(l) * np.TitleSize <= NowPlaying.LinePx, l));
     }

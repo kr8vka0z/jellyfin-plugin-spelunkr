@@ -80,8 +80,14 @@ public sealed record NowPlaying(string Label, string Title, string? Year)
             return lines;
         }
 
-        // Fill the last line with as much of the rest as fits before the "…".
+        // Fill the last line with as many whole words of the rest as fit before the "…" ("Love of Martha…", not
+        // "Love of Martha Iv…"). A first word too wide on its own is cut by letters.
         var last = string.Join(' ', lines.Skip(MaxLines - 1));
+        while (Ems(last + "…") > LineEms && last.LastIndexOf(' ') is var space and > 0)
+        {
+            last = last[..space];
+        }
+
         while (last.Length > 0 && Ems(last.TrimEnd() + "…") > LineEms)
         {
             last = last[..^1];
