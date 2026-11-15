@@ -68,7 +68,8 @@ repository; you stay on the test build until the next release.
 - If your Jellyfin uses a graphics card through VA-API (Dashboard → Playback → Transcoding → Hardware acceleration),
   channels play at 1920x1080: films are cleaned up and enlarged on the graphics card. Otherwise they play at
   1280x720. There is nothing to set in the plugin; it follows that Jellyfin setting.
-- Every channel plays inside a wood-grain TV cabinet with the channel's logo on it. To turn that off, open the
+- Every channel plays inside a wood-grain TV cabinet with the channel's logo on it and a window naming the film
+  that's on (or, between films, the one up next). To turn that off, open the
   plugin's page under Dashboard → Plugins and untick **Show the TV cabinet**. It takes effect the next time a channel
   is opened with nobody watching it.
 - Live TV opens on the **Guide** instead of the Programs tab. The plugin changes each account's setting to do this;

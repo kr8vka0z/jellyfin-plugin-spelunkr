@@ -133,11 +133,11 @@ internal sealed class ChannelStream : ILiveStream
                             _logger,
                             c,
                             segment.Url is null ? null : await _originals.FindAsync(segment.Url, c).ConfigureAwait(false),
-                            _picture,
+                            await PictureForAsync(segment, c).ConfigureAwait(false),
                             () => _originals.Reject(segment.Url!),
                             segment.Clip is { } clip ? _clips.Ready(clip.Src) : null).ConfigureAwait(false);
                     },
-                    (segment, durationMs, c) => SegmentPlayer.PlayTuningInAsync(segment, _look, durationMs, Run, c, _picture),
+                    async (segment, durationMs, c) => await SegmentPlayer.PlayTuningInAsync(segment, _look, durationMs, Run, c, await PictureForAsync(segment, c).ConfigureAwait(false)).ConfigureAwait(false),
                     Task.Delay,
                     ct).ConfigureAwait(false);
             }
@@ -182,6 +182,28 @@ internal sealed class ChannelStream : ILiveStream
                 _logger.LogDebug(ex, "Spelunkr {Channel}: no look-ahead for bump clips", _channelId);
             }
         });
+    }
+
+    // The stream's picture with the cabinet's now-playing window filled in for this segment. The tuning-in card asks
+    // for the segment it stands in for, so it already names the film. A failed lookup leaves the window empty rather
+    // than holding up the picture.
+    private async Task<Picture> PictureForAsync(Segment segment, CancellationToken ct)
+    {
+        if (_picture.Cabinet is null)
+        {
+            return _picture;
+        }
+
+        try
+        {
+            var next = segment.Kind == "show" ? null : await NowPlaying.NextShowAsync(segment, (atMs, c) => _source.SegmentAtAsync(_channelId, atMs, c), ct).ConfigureAwait(false);
+            return _picture with { Window = NowPlaying.For(segment, next) };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Spelunkr {Channel}: could not find the next film for the now-playing window", _channelId);
+            return _picture;
+        }
     }
 
     private void TryDelete(Action delete)
