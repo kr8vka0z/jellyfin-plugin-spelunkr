@@ -81,34 +81,25 @@ public sealed record NowPlaying(string Label, string Title, string? Year)
         }
 
         // Fill the last line with as many whole words of the rest as fit before the "…" ("Love of Martha…", not
-        // "Love of Martha Iv…"). When even its first word won't fit beside the "…", the "…" moves up a line
-        // ("1947…", not "Education…"). Only a piece of a word too wide for any line is cut by letters.
-        var kept = lines.Take(MaxLines - 1).ToList();
+        // "Love of Martha Iv…"). When even its first word won't fit beside the "…", the "…" stands alone on the line
+        // ("…", not "Education…"). Only a piece of a word too wide for any line is cut by letters.
         var last = string.Join(' ', lines.Skip(MaxLines - 1));
-        var words = Title.Split(' ');
-        while (Ems(last + "…") > LineEms)
+        while (Ems(last + "…") > LineEms && last.LastIndexOf(' ') is var space and > 0)
         {
-            if (last.LastIndexOf(' ') is var space and > 0)
-            {
-                last = last[..space];
-            }
-            else if (kept.Count > 0 && words.Contains(last))
-            {
-                last = kept[^1];
-                kept.RemoveAt(kept.Count - 1);
-            }
-            else
-            {
-                break;
-            }
+            last = last[..space];
         }
 
-        while (last.Length > 0 && Ems(last.TrimEnd() + "…") > LineEms)
+        if (Ems(last + "…") > LineEms && Title.Split(' ').Contains(last))
+        {
+            last = string.Empty;
+        }
+
+        while (last.Length > 0 && Ems(last + "…") > LineEms)
         {
             last = last[..^1];
         }
 
-        return [.. kept, last.TrimEnd() + "…"];
+        return [.. lines.Take(MaxLines - 1), last.TrimEnd() + "…"];
     }
 
     /// <summary>The width of <paramref name="text"/> in ems of the title font.</summary>

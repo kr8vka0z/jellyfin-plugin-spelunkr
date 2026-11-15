@@ -62,20 +62,22 @@ public class NowPlayingTests
         Assert.Equal(4, lines.Count);
         Assert.EndsWith("…", lines[^1], StringComparison.Ordinal);
         // The cut falls between words: every word shown is a whole word of the title.
-        Assert.All(string.Join(' ', lines).TrimEnd('…').Split(' '), w => Assert.Contains(w, np.Title.Split(' ')));
+        Assert.All(string.Join(' ', lines).TrimEnd('…').Split(' ', StringSplitOptions.RemoveEmptyEntries), w => Assert.Contains(w, np.Title.Split(' ')));
         Assert.Equal(NowPlaying.TitlePx, np.TitleSize);
         Assert.All(lines, l => Assert.True(NowPlaying.Ems(l) * np.TitleSize <= NowPlaying.LinePx, l));
     }
 
-    [Fact]
-    public void When_the_last_word_cannot_sit_beside_the_ellipsis_the_ellipsis_moves_up_a_line()
+    [Theory]
+    [InlineData("\"What Is Money?\" - 1947 Educational Film")] // A real HOMEROOM title: cut by letters it read "Education…".
+    [InlineData("Educational Educational Educational Educational Film")]
+    public void When_the_last_word_cannot_sit_beside_the_ellipsis_the_ellipsis_stands_alone(string title)
     {
-        // A real HOMEROOM title: cut by letters it read "Education…".
-        var np = new NowPlaying("NOW PLAYING", "\"What Is Money?\" - 1947 Educational Film", null);
+        var np = new NowPlaying("NOW PLAYING", title, null);
         var lines = np.TitleLines();
 
-        Assert.EndsWith("…", lines[^1], StringComparison.Ordinal);
-        Assert.All(string.Join(' ', lines).TrimEnd('…').Split(' '), w => Assert.Contains(w, np.Title.Split(' ')));
+        Assert.Equal(NowPlaying.MaxLines, lines.Count);
+        Assert.Equal("…", lines[^1]);
+        Assert.All(string.Join(' ', lines).TrimEnd('…').Split(' ', StringSplitOptions.RemoveEmptyEntries), w => Assert.Contains(w, np.Title.Split(' ')));
         Assert.All(lines, l => Assert.True(NowPlaying.Ems(l) * np.TitleSize <= NowPlaying.LinePx, l));
     }
 
