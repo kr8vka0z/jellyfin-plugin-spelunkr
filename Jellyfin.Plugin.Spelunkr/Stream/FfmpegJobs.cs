@@ -147,10 +147,18 @@ public static class FfmpegJobs
         // before anything further down the list (a GPU title slate would otherwise fill the rest of the film).
         // ponytail: a GPU that is broken outright fails each segment's first GPU job before its CPU twin runs.
         // That failure is immediate (the device won't open), so it costs a moment per segment, not a stall.
-        return p.VaapiDevice is null
+        var all = p.VaapiDevice is null
             ? jobs.Select(j => WithWindow(p, j(false))).ToList()
             : jobs.SelectMany(j => new[] { WithWindow(p, j(true)), WithWindow(p, j(false)) }).ToList();
+        return [.. all, .. Unwindowed(p, q => For(segment, look, offsetMs, durationMs, outputOffsetS, originalUrl, q, clip))];
     }
+
+    // If the window's words can't be drawn (a font or filter missing), every job above fails the same way, so the whole
+    // list follows again without the window: the channel plays on with the plain cabinet. Nothing is added when there
+    // is no window. ponytail: a window failure costs each segment its failed windowed jobs (each fails at once, as
+    // the filter won't build) before the plain ones run; the upgrade is to remember the failure for the stream.
+    private static IReadOnlyList<FfmpegJob> Unwindowed(Picture p, Func<Picture, IReadOnlyList<FfmpegJob>> jobs) =>
+        p.Window is null || p.Cabinet is null ? [] : jobs(p with { Window = null });
 
     /// <summary>
     /// The card that opens a stream: the channel's color, its name and the film that's on, with silence. It starts
@@ -166,7 +174,7 @@ public static class FfmpegJobs
         var text = "TUNING IN\n\n" + look.Name + (segment.Kind == "show" && segment.Title is not null ? "\n\n" + segment.Title : string.Empty);
         var (filter, files) = Cards([new BumpCard(0, durationMs, text)], look, 0, p);
         FfmpegJob Job(bool gpu) => WithWindow(p, SilentCard(p, gpu, look, filter, files, durationMs, 0));
-        return p.VaapiDevice is null ? [Job(false)] : [Job(true), Job(false)];
+        return [.. p.VaapiDevice is null ? [Job(false)] : new[] { Job(true), Job(false) }, .. Unwindowed(p, q => TuningIn(segment, look, durationMs, q))];
     }
 
     private static readonly Dictionary<string, string> Empty = [];

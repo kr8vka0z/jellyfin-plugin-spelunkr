@@ -68,6 +68,18 @@ public class NowPlayingTests
     }
 
     [Fact]
+    public void When_the_last_word_cannot_sit_beside_the_ellipsis_the_ellipsis_moves_up_a_line()
+    {
+        // A real HOMEROOM title: cut by letters it read "Education…".
+        var np = new NowPlaying("NOW PLAYING", "\"What Is Money?\" - 1947 Educational Film", null);
+        var lines = np.TitleLines();
+
+        Assert.EndsWith("…", lines[^1], StringComparison.Ordinal);
+        Assert.All(string.Join(' ', lines).TrimEnd('…').Split(' '), w => Assert.Contains(w, np.Title.Split(' ')));
+        Assert.All(lines, l => Assert.True(NowPlaying.Ems(l) * np.TitleSize <= NowPlaying.LinePx, l));
+    }
+
+    [Fact]
     public void A_long_single_word_shrinks_the_title_to_fit_whole()
     {
         var np = new NowPlaying("NOW PLAYING", "Frankenstein", "1931");
@@ -97,12 +109,34 @@ public class NowPlayingTests
         var picture = Cabinet(mode == "gpu" ? Picture.Gpu("/test/render-node") : Picture.Cpu, Film);
         var jobs = FfmpegJobs.For(Film, Look, 0, 5_000, 0, null, picture).Concat(FfmpegJobs.TuningIn(Film, Look, 4_000, picture));
 
-        foreach (var job in jobs)
+        foreach (var job in jobs.Where(j => j.TextFiles.Keys.Any(k => k.StartsWith("np", StringComparison.Ordinal))))
         {
             var filter = job.Args[job.Args.ToList().IndexOf("-filter_complex") + 1];
             var cabinet = filter[filter.IndexOf($"[{job.Args.Count(a => a == "-i") - 1}:v]", StringComparison.Ordinal)..];
             Assert.True(cabinet.IndexOf("textfile=np", StringComparison.Ordinal) is var text and > 0 && text < cabinet.IndexOf("loop=", StringComparison.Ordinal), filter);
             Assert.Equal(["NOW PLAYING", "His Girl", "Friday", "1940"], WindowLines(job));
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void If_the_window_cannot_be_drawn_the_same_jobs_follow_with_the_plain_cabinet(string mode)
+    {
+        var picture = Cabinet(mode == "gpu" ? Picture.Gpu("/test/render-node") : Picture.Cpu, Film);
+        var plain = picture with { Window = null };
+        static string Shape(FfmpegJob j) => string.Join(' ', j.Args);
+
+        foreach (var (windowed, without) in new[]
+        {
+            (FfmpegJobs.For(Film, Look, 0, 5_000, 0, "https://archive.org/download/y/y.mp4", picture), FfmpegJobs.For(Film, Look, 0, 5_000, 0, "https://archive.org/download/y/y.mp4", plain)),
+            (FfmpegJobs.TuningIn(Film, Look, 4_000, picture), FfmpegJobs.TuningIn(Film, Look, 4_000, plain)),
+        })
+        {
+            // Every windowed job first, then the plain-cabinet list exactly as a stream without the window gets it.
+            Assert.Equal(2 * without.Count, windowed.Count);
+            Assert.All(windowed.Take(without.Count), j => Assert.Contains(j.Args, a => a.Contains("textfile=np", StringComparison.Ordinal)));
+            Assert.Equal(without.Select(Shape), windowed.Skip(without.Count).Select(Shape));
+            Assert.All(without, j => Assert.Contains("/test/cabinet.png", j.Args));
         }
     }
 
