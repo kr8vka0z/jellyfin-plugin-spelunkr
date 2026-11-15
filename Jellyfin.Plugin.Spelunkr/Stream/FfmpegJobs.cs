@@ -270,7 +270,7 @@ public static class FfmpegJobs
             // The face goes in fontfile as a fontconfig pattern: drawtext's font option takes only a family name, so
             // "serif:bold" there quietly gave the sans default. A fontfile that isn't a file is handed to fontconfig,
             // which picks the nearest installed serif instead of failing the job.
-            var text =string.Create(CultureInfo.InvariantCulture, $"drawtext=textfile=np{i}.txt:expansion=none:fontfile='serif{(bold ? "\\:bold" : string.Empty)}':fontsize={Math.Round(size * s)}");
+            var text = string.Create(CultureInfo.InvariantCulture, $"drawtext=textfile=np{i}.txt:expansion=none:fontfile='serif{(bold ? "\\:bold" : string.Empty)}':fontsize={Math.Round(size * s)}");
             glow.Add(string.Create(CultureInfo.InvariantCulture, $"{text}:x={w / 2}-tw/2:y={Math.Round(top)}:fontcolor=0xFFA028"));
             sharp.Add(string.Create(CultureInfo.InvariantCulture, $"{text}:x={x + (w / 2)}-tw/2:y={y + Math.Round(top)}:fontcolor={color}"));
             top += size * 1.15 * s;
