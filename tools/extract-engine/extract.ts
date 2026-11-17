@@ -65,8 +65,9 @@ const timing = once("slide-timing constants", /(?<=const |,)[\w$]+=2500,[\w$]+=1
 const walker = once("schedule walker", /function\*([\w$]+)\(e,t\)\{let n=t;for\(;;\)\{const r=([\w$]+)\(e,n\);yield r,n=r\.endMs\}\}/);
 // Slice 2: archive.org download URL.
 const url = once("archive.org url", /function ([\w$]+)\(e,t\)\{return`https:\/\/archive\.org\/download\/\$\{e\}\/\$\{encodeURIComponent\(t\)\}`\}/);
-// Slice 3: manifest + platform + lineup pointer -> version object.
-const build = once("version builder", /function ([\w$]+)\(e,t,n\)\{const r=e\.bumps\|\|\[\],s=\(t==null\?void 0:t\.bumps\)\|\|\[\];/);
+// Slice 3: manifest + platform + lineup pointer -> version object. Since the 2026-11-17 build the bundler lowers `??`
+// to a temp, so the body may open with `var i;`.
+const build = once("version builder", /function ([\w$]+)\(e,t,n\)\{(?:var [\w$]+;)?const r=e\.bumps\|\|\[\],s=\(t==null\?void 0:t\.bumps\)\|\|\[\];/);
 const buildEnd = src.indexOf("engine:e.engine}}", build.index);
 if (buildEnd < 0) fail(`version builder end "engine:e.engine}}" not found`);
 
