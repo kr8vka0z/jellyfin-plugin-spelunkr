@@ -63,3 +63,14 @@ test("incident-2026-11-10-widen-look: the cut keeps lists before the looks and a
   expect(engine).toContain('\nconst W$=["centre","lower"],L$=["flash","duotone","zoom","duozoom","widen"];');
   expect(engine).toContain("$p as clipSpan");
 });
+
+// The 2026-11-17 build lowered `??` to a temp, so the version builder's body opens with `var i;`.
+test("incident-2026-11-17-var-prefix: the version builder may open with a var declaration", () => {
+  const dir = mkdtempSync(join(tmpdir(), "extract-test-"));
+  writeFileSync(join(dir, "bundle.js"), bundle.replace("function $b(e,t,n){const r=", "function $b(e,t,n){var i;const r="));
+  const out = join(dir, "engine.js");
+  const run = Bun.spawnSync(["bun", join(import.meta.dir, "extract.ts"), "--bundle", join(dir, "bundle.js"), "--out", out]);
+  expect(run.stderr.toString()).not.toContain("anchor");
+  expect(run.exitCode).toBe(0);
+  expect(readFileSync(out, "utf8")).toContain("function $b(e,t,n){var i;const r=");
+});
