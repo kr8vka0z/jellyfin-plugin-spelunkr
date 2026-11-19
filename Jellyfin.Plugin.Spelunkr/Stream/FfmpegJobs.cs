@@ -12,7 +12,10 @@ namespace Jellyfin.Plugin.Spelunkr.Stream;
 public sealed record ChannelLook(string Name, string Color);
 
 /// <summary>One ffmpeg run: its arguments and the text files (name to content) it reads from its working folder.</summary>
-public sealed record FfmpegJob(IReadOnlyList<string> Args, IReadOnlyDictionary<string, string> TextFiles);
+/// <param name="Args">The command line.</param>
+/// <param name="TextFiles">Files the job reads, name to content.</param>
+/// <param name="StandIn">True for a job that stands in for the real thing (the film with silence, the title slate).</param>
+public sealed record FfmpegJob(IReadOnlyList<string> Args, IReadOnlyDictionary<string, string> TextFiles, bool StandIn = false);
 
 /// <summary>
 /// A stream's one video format: 1280x720 encoded on the CPU, or 1920x1080 upscaled and encoded on a VA-API GPU.
@@ -58,10 +61,19 @@ public sealed record Picture(int Width, int Height, int MaxRateK, string? VaapiD
 /// <summary>Builds ffmpeg jobs for segments.</summary>
 public static class FfmpegJobs
 {
-    // Pad both tracks past the end of the input, then cut with -t: every job lasts exactly its planned length,
-    // even when the file is a little shorter than the manifest says, so the stream never drifts off schedule.
+    /// <summary>
+    /// How far past the end of its source a film job pads (last frame, silence) before it stops, in seconds. With -t
+    /// cutting at the planned length, a file a little shorter than the manifest still fills its slot exactly, while a
+    /// download cut off part-way ends the job soon after, short, so the player can resume the film from there.
+    /// </summary>
+    /// <remarks>
+    /// Spelunkr's derivatives run at most 0.5 s short of their manifest length (archive.org's metadata for all 192
+    /// films of two channels, 2026-11) and an original may differ by 1 s more (<see cref="ArchiveOriginals"/>), so
+    /// 10 s leaves a wide margin. A drop costs the viewer up to this long on a still frame before the film resumes.
+    /// </remarks>
     internal const int ShortfallPadS = 10;
-    private const string PadVideo = ",tpad=stop=-1:stop_mode=clone";
+    private static readonly string PadVideo = string.Create(CultureInfo.InvariantCulture, $",tpad=stop_mode=clone:stop_duration={ShortfallPadS}");
+    private static readonly string PadAudio = string.Create(CultureInfo.InvariantCulture, $",apad=pad_dur={ShortfallPadS}");
     private const string Audio = "aresample=48000,aformat=channel_layouts=stereo";
     private const string Silence = "anullsrc=r=48000:cl=stereo";
 
@@ -96,7 +108,7 @@ public static class FfmpegJobs
         {
             case "show" or "ad" when segment.Url is not null:
             {
-                var audio = Audio + (segment.GainDb != 0 ? string.Create(CultureInfo.InvariantCulture, $",volume={segment.GainDb}dB") : string.Empty) + ",apad";
+                var audio = Audio + (segment.GainDb != 0 ? string.Create(CultureInfo.InvariantCulture, $",volume={segment.GainDb}dB") : string.Empty) + PadAudio;
                 List<string> Input(string url) => [.. Net(), "-ss", Seconds(segment.InMs + offsetMs), "-i", url];
                 if (originalUrl is not null)
                 {
@@ -105,7 +117,8 @@ public static class FfmpegJobs
 
                 var input = Input(segment.Url);
                 jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, .. FilmVideo(p, gpu, 1), "-map", "0:a:0", "-af", audio, .. Tail(gpu)], Empty));
-                jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, "-f", "lavfi", "-i", Silence, .. FilmVideo(p, gpu, 2), "-map", "1:a", .. Tail(gpu)], Empty));
+                // -shortest: the silence never ends, so without it a dead source would still fill the slot.
+                jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, "-f", "lavfi", "-i", Silence, .. FilmVideo(p, gpu, 2), "-map", "1:a", "-shortest", .. Tail(gpu)], Empty, StandIn: true));
                 break;
             }
 
@@ -142,7 +155,7 @@ public static class FfmpegJobs
         // The last resort: the channel color with the title (or channel name) and silence.
         var slateText = segment.Title ?? look.Name;
         var (slate, slateFiles) = Cards([new BumpCard(offsetMs, offsetMs + durationMs, slateText)], look, offsetMs, p);
-        jobs.Add(gpu => SilentCard(p, gpu, look, slate, slateFiles, durationMs, outputOffsetS));
+        jobs.Add(gpu => SilentCard(p, gpu, look, slate, slateFiles, durationMs, outputOffsetS) with { StandIn = true });
 
         // On the GPU each job is followed by its CPU twin, so a failed GPU film is retried as the same film on the CPU
         // before anything further down the list (a GPU title slate would otherwise fill the rest of the film).

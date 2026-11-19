@@ -54,6 +54,96 @@ public class SegmentPlaybackTests
         Assert.Equal("20.000", Arg(ran[1], "-output_ts_offset"));
     }
 
+    [Theory]
+    [InlineData(40_000, true)] // played 30 s, then the download dropped: the same film resumes
+    [InlineData(11_000, false)] // died after 1 s and was padded 10 s: no real progress, so the next fallback
+    public async Task A_film_that_played_and_then_stopped_is_resumed_not_replaced(long firstMs, bool resumed)
+    {
+        var ran = new List<FfmpegJob>();
+        var emitted = await SegmentPlayer.PlayAsync(Film, Look, 1_000, 600_000, 100, (job, _) =>
+        {
+            ran.Add(job);
+            return Task.FromResult(ran.Count == 1 ? firstMs : AskedMs(job));
+        }, NullLogger.Instance, CancellationToken.None);
+
+        Assert.Equal(2, ran.Count);
+        Assert.Equal(resumed, !ran[1].StandIn);
+        // Either way the next job picks up where the first one stopped, in the file and in the stream.
+        Assert.Equal((1_000 + firstMs) / 1000.0, double.Parse(Arg(ran[1], "-ss"), CultureInfo.InvariantCulture));
+        Assert.Equal(100 + (firstMs / 1000.0), double.Parse(Arg(ran[1], "-output_ts_offset"), CultureInfo.InvariantCulture));
+        // A stand-in runs a minute and hands back, so the real film is tried again soon.
+        Assert.Equal(resumed ? 600_000 : firstMs + SegmentPlayer.StandInMs, emitted);
+    }
+
+    [Fact]
+    public async Task A_film_that_keeps_dropping_is_resumed_a_few_times_then_stands_in_for_a_minute()
+    {
+        var ran = new List<FfmpegJob>();
+        var emitted = await SegmentPlayer.PlayAsync(Film, Look, 0, 600_000, 0, (job, _) =>
+        {
+            ran.Add(job);
+            return Task.FromResult(job.StandIn ? AskedMs(job) : 30_000L);
+        }, NullLogger.Instance, CancellationToken.None);
+
+        Assert.Equal(SegmentPlayer.MaxRetries + 1, ran.Count(j => !j.StandIn));
+        Assert.Equal("60.000", Arg(ran[^1], "-t"));
+        Assert.Equal(((SegmentPlayer.MaxRetries + 1) * 30_000) + SegmentPlayer.StandInMs, emitted);
+    }
+
+    [Theory]
+    [InlineData(0, 1)] // never played: set aside
+    [InlineData(40_000, 0)] // played, then dropped and wouldn't come back: kept for next time
+    public async Task An_original_is_set_aside_only_when_it_never_played(long firstMs, int expectFailures)
+    {
+        const string original = "https://archive.org/download/x/original.mp4";
+        var urls = new List<string>();
+        var failures = 0;
+
+        await SegmentPlayer.PlayAsync(Film, Look, 0, 600_000, 0, (job, _) =>
+        {
+            urls.Add(Arg(job, "-i"));
+            return Task.FromResult(urls.Count == 1 ? firstMs : urls[^1] == original ? 0L : AskedMs(job));
+        }, NullLogger.Instance, CancellationToken.None, original, originalFailed: () => failures++);
+
+        Assert.Equal(Film.Url, urls[^1]);
+        Assert.Equal(expectFailures, failures);
+    }
+
+    [Fact]
+    public async Task A_source_down_at_the_start_gets_a_minute_of_slate_then_the_film_is_tried_again()
+    {
+        var segment = Film with { StartMs = 0, LengthMs = 600_000 };
+        var ran = new List<FfmpegJob>();
+        using var cts = new CancellationTokenSource();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => StreamPump.RunAsync(
+            0,
+            () => 0,
+            (_, _) => Task.FromResult(segment),
+            (s, offsetMs, durationMs, outputS, c) => SegmentPlayer.PlayAsync(s, Look, offsetMs, durationMs, outputS, (job, _) =>
+            {
+                ran.Add(job);
+                if (ran.Count == 4)
+                {
+                    cts.Cancel();
+                    cts.Token.ThrowIfCancellationRequested();
+                }
+
+                // The film and the film with silence fail at once (the source is down); the slate works.
+                return Task.FromResult(job.Args.Contains(Film.Url) ? 0L : AskedMs(job));
+            }, NullLogger.Instance, c),
+            (_, _, _) => Task.FromResult(0L),
+            (_, _) => Task.CompletedTask,
+            cts.Token));
+
+        Assert.Equal(4, ran.Count);
+        Assert.Equal("60.000", Arg(ran[2], "-t"));
+        Assert.DoesNotContain(Film.Url, ran[2].Args);
+        // A minute later the real film comes first again, a minute into the film and the stream.
+        Assert.Equal((Film.Url, "60.000", "60.000"), (Arg(ran[3], "-i"), Arg(ran[3], "-ss"), Arg(ran[3], "-output_ts_offset")));
+        Assert.False(ran[3].StandIn);
+    }
+
     [Fact]
     public async Task When_every_fallback_fails_it_reports_what_was_actually_emitted()
     {
