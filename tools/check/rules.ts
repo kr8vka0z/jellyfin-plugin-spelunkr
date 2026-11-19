@@ -50,7 +50,7 @@ export function lineupProblems(channels: any[]): string[] {
 const show = (v: unknown) => JSON.stringify(v)?.slice(0, 80);
 
 /** The kind of a problem line: the same field on any channel, version or item counts as one kind. */
-export const problemKind = (line: string) =>
+const problemKind = (line: string) =>
   line
     .replace(/^channel [^ .]+/, "channel *")
     .replace(/^[^ ]+ v\d+/, "* v*")
@@ -59,10 +59,11 @@ export const problemKind = (line: string) =>
     .replace(/: (empty|not #RRGGBB|no mp4).*$/, ": $1");
 
 /**
- * Problems for the report: the first `keep` of each kind, then a count of the rest. A renamed field on every item
+ * Problems for the report: the first five of each kind, then a count of the rest. A renamed field on every item
  * of every channel is thousands of lines; this makes it one kind with a count.
  */
-export function groupProblems(problems: string[], keep = 5): string {
+export function groupProblems(problems: string[]): string {
+  const keep = 5;
   const kinds = new Map<string, string[]>();
   for (const p of problems) {
     const k = problemKind(p);
@@ -77,8 +78,8 @@ export function groupProblems(problems: string[], keep = 5): string {
 export const REPORT_LIMIT = 60_000;
 
 /** The report cut to fit a GitHub issue. The job log keeps the whole text. */
-export function fitReport(report: string, limit = REPORT_LIMIT): string {
-  if (report.length <= limit) return report;
+export function fitReport(report: string): string {
+  if (report.length <= REPORT_LIMIT) return report;
   const note = "\n\n... cut to fit a GitHub issue. The whole report is in the job log (Run link below).";
-  return report.slice(0, limit - note.length) + note;
+  return report.slice(0, REPORT_LIMIT - note.length) + note;
 }

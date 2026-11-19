@@ -84,7 +84,7 @@ await check("data", async () => {
       expect(w, p, "startIndex", "integer", true);
       expect(w, p, "details", "string", true);
     }
-    const loaded = await loadVersions(ch.versions ?? [], (path) => readText(path), true);
+    const loaded = await loadVersions(ch.versions ?? [], readText, true);
     for (const { pointer: p, text, platform, details } of loaded) {
       const w = `${channelId} v${p.v}`;
       const m = JSON.parse(text);
