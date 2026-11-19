@@ -110,14 +110,18 @@ public static class FfmpegJobs
             {
                 var audio = Audio + (segment.GainDb != 0 ? string.Create(CultureInfo.InvariantCulture, $",volume={segment.GainDb}dB") : string.Empty) + PadAudio;
                 List<string> Input(string url) => [.. Net(), "-ss", Seconds(segment.InMs + offsetMs), "-i", url];
+                // -shortest ends a job with its first track to end, so a source that stops ends the job (after the
+                // pad) and the job reports short. Without it the picture alone could fill the slot: the silence of
+                // the film-with-silence job never ends, and on a GPU stream with the cabinet libplacebo keeps drawing
+                // the looped cabinet over the last frame. ponytail: that GPU film-with-silence job still fills its
+                // slot after a drop, as both its tracks are endless; it is a stand-in, so that is a minute at most.
                 if (originalUrl is not null)
                 {
-                    jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. Input(originalUrl), .. FilmVideo(p, gpu, 1), "-map", "0:a:0", "-af", audio, .. Tail(gpu)], Empty));
+                    jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. Input(originalUrl), .. FilmVideo(p, gpu, 1), "-map", "0:a:0", "-af", audio, "-shortest", .. Tail(gpu)], Empty));
                 }
 
                 var input = Input(segment.Url);
-                jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, .. FilmVideo(p, gpu, 1), "-map", "0:a:0", "-af", audio, .. Tail(gpu)], Empty));
-                // -shortest: the silence never ends, so without it a dead source would still fill the slot.
+                jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, .. FilmVideo(p, gpu, 1), "-map", "0:a:0", "-af", audio, "-shortest", .. Tail(gpu)], Empty));
                 jobs.Add(gpu => new([.. Head, .. FilmDevices(p, gpu), .. input, "-f", "lavfi", "-i", Silence, .. FilmVideo(p, gpu, 2), "-map", "1:a", "-shortest", .. Tail(gpu)], Empty, StandIn: true));
                 break;
             }
@@ -266,7 +270,7 @@ public static class FfmpegJobs
     /// </remarks>
     private static string Framed(Picture p, bool gpu, string video, int cabinetInput) => gpu
         ? string.Create(CultureInfo.InvariantCulture, $"{video},hwupload[a];[{cabinetInput}:v]format=rgba{Window(p)},setparams=color_trc=bt709:color_primaries=bt709,hwupload,loop=-1:1:0[b];[a][b]libplacebo=inputs=2:w={p.Width}:h={p.Height}:fps=30:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12:colorspace=bt709:range=tv:color_primaries=bt709:color_trc=bt709:{Place("x", p.TubeX, 0)}:{Place("y", p.TubeY, 0)}:{Place("w", p.TubeWidth, p.Width)}:{Place("h", p.TubeHeight, p.Height)},hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1[v]")
-        : string.Create(CultureInfo.InvariantCulture, $"{video},pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,scale=out_color_matrix=bt709:out_range=tv[a];[{cabinetInput}:v]{(p.Window is null ? string.Empty : "format=rgba" + Window(p) + ",")}format=yuva420p,loop=-1:1:0[b];[a][b]overlay,format=yuv420p,setsar=1[v]");
+        : string.Create(CultureInfo.InvariantCulture, $"{video},pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,scale=out_color_matrix=bt709:out_range=tv[a];[{cabinetInput}:v]{(p.Window is null ? string.Empty : "format=rgba" + Window(p) + ",")}format=yuva420p,loop=-1:1:0[b];[a][b]overlay=shortest=1,format=yuv420p,setsar=1[v]");
 
     // The now-playing window's words: label, title lines, year. The window is empty in the art; these are drawn onto
     // the one decoded cabinet frame before it is looped, so they cost nothing per frame and a soft glow (a blurred
