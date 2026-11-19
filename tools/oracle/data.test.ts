@@ -1,7 +1,21 @@
 // data.test.ts: paths from Spelunkr's data must not be able to read or write outside the chosen folder.
 //   bun test tools/oracle
 import { expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { bucketPath, inside, readText } from "./data.ts";
+
+// The documented fixture refresh (AGENTS.md) must rebuild every file the tests read, details files included.
+test("oracle --save mirrors the lineup, manifests, platform and details files", () => {
+  const fixtures = join(import.meta.dir, "../../Jellyfin.Plugin.Spelunkr.Tests/Fixtures/spelunkr");
+  const save = mkdtempSync(join(tmpdir(), "oracle-save-"));
+  const run = Bun.spawnSync(["bun", join(import.meta.dir, "oracle.ts"), "now", "1793217600000", "--data", fixtures, "--save", save]);
+  expect(run.exitCode).toBe(0);
+  for (const f of ["lineup.json", "manifests/gumshoe/v19.json", "platform/294b0bf5ae4d1917.json", "details/gumshoe/v19.json"])
+    expect(existsSync(join(save, f))).toBe(true);
+  expect(readdirSync(join(save, "manifests"))).toEqual(["gumshoe"]);
+});
 
 const bad = [
   "manifests/gumshoe/v19.json#/../../../../../../.github/workflows/build.yml", // fragment hiding a climb out
