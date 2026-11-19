@@ -451,7 +451,10 @@ public class SpelunkrSourceTests
         });
         var source = new SpelunkrSource(Reader(() => lineup), NullLogger<SpelunkrSource>.Instance);
 
-        Assert.Contains("homeroom", (await source.GetChannelsAsync(CancellationToken.None)).Select(c => c.Id));
+        var channels = (await source.GetChannelsAsync(CancellationToken.None)).Select(c => c.Id).ToList();
+        Assert.Contains("homeroom", channels);
+        Assert.DoesNotContain("gumshoe", channels);
+        Assert.True((await source.SegmentAtAsync("homeroom", 1_793_215_002_819, CancellationToken.None)).LengthMs > 0);
     }
 
     [Fact]

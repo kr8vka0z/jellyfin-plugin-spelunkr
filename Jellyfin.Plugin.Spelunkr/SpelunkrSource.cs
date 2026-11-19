@@ -309,9 +309,9 @@ public sealed partial class SpelunkrSource
             {
                 // Deserialize copies the version pointers out, so they outlive this JsonDocument.
                 var channel = element.Deserialize<LineupChannel>(ScheduleEngine.Json);
-                channels.Add(channel is { Id: not null, Name: not null, Color: not null, Versions: not null }
+                channels.Add(channel is { Id: not null, Name: not null, Color: not null, Versions: not null } && channel.Versions.All(IsPointer)
                     ? channel
-                    : throw new InvalidDataException("a channel is missing its id, name, color or versions"));
+                    : throw new InvalidDataException("a channel is missing its id, name, color or versions, or a version is malformed"));
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException)
             {
@@ -321,6 +321,16 @@ public sealed partial class SpelunkrSource
 
         return new Lineup(audioBase, channels);
     }
+
+    /// <summary>
+    /// A version pointer the plugin can use: a whole-number <c>v</c> and a <c>manifest</c> path. Checked before
+    /// anything of the channel is loaded, so a pointer the engine would take but lookups can't read never gets in.
+    /// </summary>
+    private static bool IsPointer(JsonElement p)
+        => p.ValueKind == JsonValueKind.Object
+            && p.TryGetProperty("v", out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out _)
+            && p.TryGetProperty("manifest", out var m) && m.ValueKind == JsonValueKind.String
+            && (!p.TryGetProperty("details", out var d) || d.ValueKind is JsonValueKind.String or JsonValueKind.Null);
 
     /// <summary>
     /// Forgets the versions of a channel the lineup no longer lists (the site does the same on reload): out of the

@@ -19,8 +19,9 @@ continuous TV stream.
   version's details file (film descriptions). Offers every lineup channel with a number that isn't coming-soon,
   debug-only or audio-overlay (`IsOffered`). The lineup is read channel by channel, so a malformed channel is
   skipped, and a channel whose files fail to load is left out without affecting the others. Each download has a
-  15 s limit. Its refresh timer, run by Registration, checks the lineup every 10 minutes, or 5 after anything
-  failed (a failed channel, or film descriptions, come back then); an unchanged lineup costs one small download.
+  15 s limit. Its refresh timer, run by Registration, checks the lineup every 10 minutes, or 5 after a channel
+  failed to load; film descriptions that failed are fetched again at the next check, whichever it is. An unchanged
+  lineup costs one small download.
   After a refresh, versions the lineup no longer lists are forgotten (engine, manifests, details, platform files),
   except on a channel that failed to load. `audioBase` must be an `https://` address or the lineup is refused.
 - **Tuner** (`SpelunkrTunerHost.cs`): Jellyfin's Live TV asks it for channels and streams.
