@@ -46,6 +46,20 @@ public sealed class CabinetArtTests : IDisposable
     }
 
     [Fact]
+    public async Task With_a_real_ffmpeg_the_logo_goes_on_the_plate_and_nothing_is_left_behind()
+    {
+        Assert.SkipWhen(TestKit.Ffmpeg is null, "ffmpeg is not installed");
+        var plain = await Cabinet(TestKit.Ffmpeg!, false);
+
+        var finished = await Cabinet(TestKit.Ffmpeg!, true);
+
+        Assert.NotEqual(plain, finished);
+        Assert.True(new FileInfo(finished!).Length > 10_000);
+        Assert.Equal(2, Directory.GetFiles(_dir).Length); // the plain and the finished cabinet, no temp files
+        Assert.Equal(finished, await Cabinet("/nonexistent/ffmpeg", true)); // made once, then found
+    }
+
+    [Fact]
     public async Task No_cabinet_at_all_if_it_cannot_be_written()
     {
         File.WriteAllText(_dir, "a file where the folder should be");
