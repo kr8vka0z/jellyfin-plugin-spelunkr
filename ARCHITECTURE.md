@@ -38,7 +38,7 @@ continuous TV stream.
   Jellyfin serves to its players. `FfmpegJobs` builds the commands, `StreamPump` walks the schedule, `SegmentPlayer` walks the fallbacks,
   `FfmpegProcess` runs one job and measures what it wrote, `BumpCards` times the bump text, `Pacing` keeps the
   stream on the wall clock, `ArchiveOriginals` finds a film's better original file on archive.org, `CabinetArt`
-  puts the channel's logo on the TV cabinet image, `BumpClips` downloads and measures bump clips ahead of their break,
+  puts the channel's logo on the TV cabinet image, `BumpClips` fetches and measures the stretch of a bump clip its break uses, ahead of the break,
   `BumpClipVideo` draws a clip under the bump text, `NowPlaying` decides what the cabinet's now-playing window
   says, `StoredFile` writes the content-named files (cabinets, logos, clips) through a temp file and a move.
 - **Live TV landing** (`LiveTvLanding.cs`): on startup, and when an account is created, gives every account with
@@ -89,9 +89,14 @@ continuous TV stream.
   doesn't draw, and the daily check flags a look or word position in the data that it doesn't. The engine's own clip
   helpers (exported by `tools/extract-engine`) plan it, and `schedule.js` lays the channel slides out the site's way for it (the first slide gets an extra second, where
   plain bumps keep a 2 s tail; the channel half lasts the same either way). Only the clock that needs the file's length
-  is ported to C# (`BumpClipVideo.ClipTimeS`), pinned by a test to the engine's function. The clip is downloaded and
-  ffprobed in the background when the segment before its break starts, and ffmpeg only ever reads the finished local
-  file, so archive.org can't hold up a break. A clip that isn't ready, or whose job fails, leaves the break as it is
+  is ported to C# (`BumpClipVideo.ClipTimeS`), pinned by a test to the engine's function. Live clips are whole
+  archive.org episodes, of which a break shows the 15-20 s before the cut-off point, so only that stretch is fetched:
+  ffmpeg reads the archive.org address with range requests from 2 s before the first frame shown to 1 s past the
+  cut-off (or to the end, measured first with ffprobe, when there is none) and re-encodes it to a small muted file that
+  starts exactly there. A stretch over a minute isn't fetched. The clip clock subtracts the stretch's start
+  (`ReadyClip.OffsetS`), so every frame is the one the whole file would show. The stretch is fetched and ffprobed in
+  the background when the segment before its break starts, kept per clip, cut-off and motion length, and the bump job
+  only ever reads the finished local file, so archive.org can't hold up a break. A clip that isn't ready, or whose job fails, leaves the break as it is
   without one: the clip job is put in front of the usual bump jobs, which stay unchanged behind it.
 - **Tuning-in card.** A stream opens with a 4 s card (channel color, name, the film that's on), drawn locally so the player gets a picture before the archive answers. It takes the schedule's first 4 s, so the film joins 4 s in and stays on schedule. If it can't be drawn the stream starts without it.
 - **Better source files.** Spelunkr links archive.org's compressed derivative (~1 Mbps). When the item's metadata

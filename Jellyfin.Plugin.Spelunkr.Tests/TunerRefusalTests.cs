@@ -37,7 +37,6 @@ public sealed class TunerRefusalTests : IDisposable
         return new SpelunkrTunerHost(
             SpelunkrSourceTests.FromFixtures(_reads),
             new ArchiveOriginals(http, NullLogger<ArchiveOriginals>.Instance),
-            http,
             config,
             Stub<IMediaEncoder>.Of(_ => null),
             Stub<IServerApplicationHost>.Of(_ => null),

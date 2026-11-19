@@ -80,7 +80,9 @@ public class BumpClipTests
     [InlineData(12.545879, null)] // longer than the motion slides: joins part-way, ends with them
     [InlineData(4.0, null)] // shorter: waits on its first frame, then ends with them
     [InlineData(12.545879, 6.0)] // cut off at clipTo
-    public void Clip_clock_matches_the_engine(double lengthS, double? to)
+    [InlineData(844.03, 843.03, 831.97)] // a fetched stretch of a long episode, cut off at clipTo
+    [InlineData(600.0, null, 588.94)] // a fetched stretch running to the episode's end
+    public void Clip_clock_matches_the_engine(double lengthS, double? to, double offsetS = 0)
     {
         var clip = ClipBump().Clip! with { To = to };
         var js = new Engine();
@@ -96,7 +98,8 @@ public class BumpClipTests
         for (var n = 0.0; n < 20.5; n += 0.1)
         {
             var engine = js.Invoke(at, clip.StartMs / 1000.0, clip.MotionEndMs / 1000.0, clip.EndMs / 1000.0, lengthS, n, to is null ? Jint.Native.JsValue.Null : to.Value).AsNumber();
-            Assert.Equal(engine, BumpClipVideo.ClipTimeS(clip, lengthS, n), 6);
+            // In a stretch the same picture is that far earlier in the file.
+            Assert.Equal(engine - offsetS, BumpClipVideo.ClipTimeS(clip, lengthS, n, offsetS), 6);
         }
     }
 
@@ -115,6 +118,27 @@ public class BumpClipTests
         Assert.Contains(shift, graph, StringComparison.Ordinal);
         // In view from the first clip slide to the end of the last channel slide, on this job's clock.
         Assert.Contains($"overlay=eof_action=pass:enable='gte(t,{Ms(Math.Max(3_500, offsetMs) - offsetMs)})*lt(t,{Ms(19_035 - offsetMs)})'", graph, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(8_000)]
+    [InlineData(14_000)]
+    public void A_fetched_stretch_is_trimmed_at_the_same_moments_of_the_clip_as_the_whole_file(long offsetMs)
+    {
+        var bump = ClipBump();
+        var stretch = Clip with { OffsetS = 1.5 };
+        (double From, double To) Trim(ReadyClip clip)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(Filter(FfmpegJobs.For(bump, Gumshoe, offsetMs, bump.LengthMs - offsetMs, 0, clip: clip)[0]), @"trim=start=([\d.]+):end=([\d.]+)");
+            return (double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture));
+        }
+
+        var (wholeFrom, wholeTo) = Trim(Clip);
+        var (from, to) = Trim(stretch);
+
+        Assert.Equal(wholeFrom - 1.5, from, 3);
+        Assert.Equal(wholeTo - 1.5, to, 3);
     }
 
     [Fact]
@@ -286,43 +310,66 @@ public class BumpClipTests
         var dir = Path.Combine(Path.GetTempPath(), "spelunkr-clip-test-" + Guid.NewGuid().ToString("N"));
         var time = new ManualTime();
         var fail = true;
-        var downloads = 0;
+        var cuts = new List<ClipStretch>();
         var clips = new BumpClips(
-            async (url, to, ct) =>
+            async (stretch, to, ct) =>
             {
-                downloads++;
+                cuts.Add(stretch);
                 if (fail)
                 {
                     throw new HttpRequestException("503");
                 }
 
-                await to.WriteAsync(new byte[] { 1, 2, 3 }, ct);
+                await File.WriteAllBytesAsync(to, [1, 2, 3], ct);
             },
-            (path, ct) => Task.FromResult<double?>(12.5),
+            (path, ct) => Task.FromResult<double?>(12.06),
             dir,
             NullLogger.Instance,
             time);
+        // Cut off 843.03 s into the episode, as live clips are: 9.06 s of motion slides.
+        var plan = ClipBump().Clip! with { To = 843.03 };
         try
         {
-            Assert.Null(clips.Ready(Src)); // not fetched yet: the break goes ahead without it
-            await clips.Prefetch(Src);
-            Assert.Null(clips.Ready(Src));
+            Assert.Null(clips.Ready(plan)); // not fetched yet: the break goes ahead without it
+            await clips.Prefetch(plan);
+            Assert.Null(clips.Ready(plan));
             fail = false;
-            await clips.Prefetch(Src);
-            Assert.Equal(1, downloads); // failed 0 minutes ago: not tried again yet
+            await clips.Prefetch(plan);
+            Assert.Single(cuts); // failed 0 minutes ago: not tried again yet
 
             time.Advance(TimeSpan.FromMinutes(11));
-            await clips.Prefetch(Src);
-            var ready = clips.Ready(Src)!;
-            Assert.Equal(12.5, ready.LengthS);
+            await clips.Prefetch(plan);
+            var ready = clips.Ready(plan)!;
+            // From 2 s before the first frame shown (831.97 s, back to a 30 fps frame) to 1 s past the cut-off point.
+            var start = 24_959 / 30.0;
+            Assert.Equal(Src, cuts[^1].Src);
+            Assert.Equal(start, cuts[^1].StartS, 6);
+            Assert.Equal(844.03 - start, cuts[^1].LengthS!.Value, 6);
+            Assert.Equal((start + 12.06, start), (ready.LengthS, ready.OffsetS));
             Assert.Equal(3, new FileInfo(ready.Path).Length);
             Assert.Empty(Directory.GetFiles(dir, "*.part"));
-            Assert.Null(clips.Ready("https://archive.org/download/other/x.mp4"));
+            Assert.Null(clips.Ready(plan with { Src = "https://archive.org/download/other/x.mp4" }));
+            Assert.Null(clips.Ready(plan with { To = 500 })); // the same episode cut elsewhere is its own file
         }
         finally
         {
             Directory.Delete(dir, true);
         }
+    }
+
+    [Theory]
+    [InlineData(57_000, true)] // 57 s of motion + 2 s lead + 1 s past the cut-off: a minute exactly
+    [InlineData(57_001, false)]
+    public async Task A_stretch_over_a_minute_is_never_fetched(long motionMs, bool fetched)
+    {
+        using var dir = new TempDir();
+        var cuts = 0;
+        var clips = new BumpClips((_, _, _) => Task.FromResult(++cuts), (_, _) => Task.FromResult<double?>(60), dir.Path, NullLogger.Instance, TimeProvider.System);
+        var plan = ClipBump().Clip! with { To = 843.03 };
+
+        await clips.Prefetch(plan with { MotionEndMs = plan.StartMs + motionMs });
+
+        Assert.Equal(fetched ? 1 : 0, cuts);
     }
 
     [Fact]
