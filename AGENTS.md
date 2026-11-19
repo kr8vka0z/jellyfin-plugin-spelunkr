@@ -15,11 +15,13 @@
   regex in `extract.ts`, keep the exported aliases the same, and leave `schedule.js` alone where possible.
 - After regenerating `engine.js` or refreshing fixtures, regenerate the expected files with the commands in
   the header of `Jellyfin.Plugin.Spelunkr.Tests/ScheduleEngineTests.cs`, then run `dotnet test`. Fixtures come
-  from `bun tools/oracle/oracle.ts now <ms> --save Jellyfin.Plugin.Spelunkr.Tests/Fixtures/spelunkr`.
+  from `bun tools/oracle/oracle.ts now <ms> --save Jellyfin.Plugin.Spelunkr.Tests/Fixtures/spelunkr`, run once per
+  channel the tests use (`--channel gumshoe`, then `--channel homeroom`).
 - Public repo: no server paths, hostnames, IPs or personal details anywhere.
-- Build against the Jellyfin version in the csproj (`Jellyfin.Controller` 12.3.0); `TARGET_ABI` in `.github/actions/build-plugin/action.yml` must match.
-- Which channels are offered: `SpelunkrSource.IsOffered` (mirrored in `tools/check/check.ts`; keep them the same).
-- `bun test tools/oracle tools/release tools/extract-engine` runs the Bun-side tests (path safety, release decisions, the feed guard, extractor anchors).
+- Build against the Jellyfin version in the csproj (`Jellyfin.Controller` 12.3.0). The build action reads the zip's `targetAbi` from there (`feed.ts target-abi`).
+- Which channels are offered: `SpelunkrSource.IsOffered`, mirrored by `offered` in `tools/check/rules.ts`. Both are tested
+  against `Jellyfin.Plugin.Spelunkr.Tests/Fixtures/offered-cases.json`: change the rule there first.
+- `bun test tools` runs the Bun-side tests (path safety, release decisions, the feed guard, extractor anchors, the daily check's rules). No install needed.
 
 ## Branches
 
