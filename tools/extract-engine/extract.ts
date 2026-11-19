@@ -47,8 +47,8 @@ async function loadBundle(): Promise<string> {
 const src = await loadBundle();
 
 // Every anchor must match exactly once; two matches means the regex is no longer specific enough.
-function once(label: string, re: RegExp): RegExpExecArray {
-  const all = [...src.matchAll(new RegExp(re.source, "g"))];
+function once(label: string, re: RegExp, text = src): RegExpExecArray {
+  const all = [...text.matchAll(new RegExp(re.source, "g"))];
   if (all.length !== 1) fail(`anchor "${label}" matched ${all.length} times (want 1): ${re.source}`);
   return all[0] as RegExpExecArray;
 }
@@ -78,11 +78,7 @@ const slice2 = url[0];
 const slice3 = src.slice(build.index, buildEnd + "engine:e.engine}}".length);
 
 // Names the glue needs, looked up inside slice 1 so they refer to the code we actually cut.
-const inSlice1 = (label: string, re: RegExp) => {
-  const m = slice1.match(re);
-  if (!m) fail(`anchor "${label}" not found in slice 1: ${re.source}`);
-  return m;
-};
+const inSlice1 = (label: string, re: RegExp) => once(label, re, slice1);
 const registry = inSlice1("registry", /function ([\w$]+)\(e,t=\[\]\)\{const n=\{channelId:e,versions:\[\]\};for\(const r of t\)([\w$]+)\(n,r\);return n\}/);
 const slideMs = inSlice1("slide length", /function ([\w$]+)\(e\)\{return Math\.max\([\w$]+,[\w$]+\+e\.length\*[\w$]+\)\}const ([\w$]+)=1e3,/);
 

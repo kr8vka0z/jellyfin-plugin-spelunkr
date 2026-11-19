@@ -156,6 +156,10 @@ All of it runs from `.github/workflows/release.yml` and `test-build.yml`; `AGENT
   empty list (media sources) for channels it doesn't own, or it breaks other tuners.
 - Stream files live in `<cache>/spelunkr-streams`, not Jellyfin's transcode folder: Jellyfin empties the transcode
   folder when its transcoding service first starts, which killed a stream opened right after a restart.
+- A stream file grows for as long as its channel stays open and is deleted when the stream closes (or at the next
+  start). At the bitrate caps that is at most about 2.3 GB an hour on the CPU (5000k video plus 128k audio) and
+  3.7 GB an hour on a GPU (8000k), so up to 55 to 90 GB for a TV left on all day; old films usually encode well
+  under the caps. Jellyfin's own live-stream temp files grow the same way.
 - At each join between segments the audio overlaps by a few tens of milliseconds (AAC encoder start-up);
   players drop the extra packets. Video has no overlap because B-frames are off.
 - The daily check (`tools/check`) only notes a change in the extracted engine code, because a rebuild that only

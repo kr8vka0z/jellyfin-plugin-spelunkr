@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { feedProblems, isAbove as above, isSuperseded, newestStable, testVersion } from "./feed.ts";
+import { feedProblems, isAbove as above, isSuperseded, newestStable, releaseVersion, targetAbi, testVersion } from "./feed.ts";
 
 const manifest = (...entries: [string, string][]) =>
   JSON.stringify([{ versions: entries.map(([version, sourceUrl]) => ({ version, sourceUrl })) }]);
@@ -65,6 +65,41 @@ test("the public feed refuses test builds", () => {
   expect(feedProblems(manifest(["0.3.4.7", "https://x/v0.3.4-dev.7/p.zip"]))).toHaveLength(1);
   expect(feedProblems(manifest(["0.3.5.0", "https://x/v0.3.4-dev.7/p.zip"]))).toHaveLength(1);
   expect(feedProblems(manifest())).toHaveLength(1);
+});
+
+// The release job's first step: a mistyped tag must stop it before anything is published.
+test.each([
+  ["v0.6.2", "0.6.2.0"],
+  ["v0.6", undefined],
+  ["v0.6.2.1", undefined],
+  ["0.6.2", undefined],
+  ["v0.6.2-dev.3", undefined],
+])("release tag %s", (tag, version) => {
+  if (version) expect(releaseVersion(tag)).toBe(version);
+  else expect(() => releaseVersion(tag)).toThrow("is not vX.Y.Z");
+});
+
+test("the zip's targetAbi is the Jellyfin version the projects build against", () => {
+  const ref = (pkg: string, v: string) => `<PackageReference Include="Jellyfin.${pkg}" Version="${v}" ExcludeAssets="runtime" />`;
+  expect(targetAbi([ref("Controller", "12.3.0") + ref("Model", "12.3.0"), ref("Controller", "12.3.0")])).toBe("12.3.0.0");
+  expect(() => targetAbi([ref("Controller", "12.4.0") + ref("Model", "12.3.0")])).toThrow("12.4.0, 12.3.0");
+  expect(() => targetAbi(["<Project />"])).toThrow("none");
+  expect(execFileSync("bun", [resolve("tools/release/feed.ts"), "target-abi"], { encoding: "utf8" })).toMatch(/^\d+\.\d+\.\d+\.0\n$/);
+});
+
+// Both workflows build their feed entry with feed-entry.jq. A re-run of the release job must replace its entry.
+test("a feed entry goes first; the public feed keeps older versions and never lists one twice", () => {
+  const entry = (feed: string, v: string, keep: boolean) =>
+    JSON.parse(execFileSync("jq", ["--arg", "v", v, "--arg", "abi", "12.3.0.0", "--arg", "url", `https://x/${v}.zip`, "--arg", "md5", "m",
+      "--arg", "log", "https://x/log", "--argjson", "keep", String(keep), "-f", "tools/release/feed-entry.jq"], { input: feed, encoding: "utf8" }));
+  const feed = JSON.stringify([{ name: "Spelunkr", versions: [{ version: "0.3.4.0" }, { version: "0.3.3.0" }] }]);
+  const once = entry(feed, "0.3.5.0", true);
+  expect(once[0].name).toBe("Spelunkr");
+  expect(once[0].versions.map((v: any) => v.version)).toEqual(["0.3.5.0", "0.3.4.0", "0.3.3.0"]);
+  expect(Object.keys(once[0].versions[0])).toEqual(["version", "changelog", "targetAbi", "sourceUrl", "checksum", "timestamp"]);
+  expect(once[0].versions[0].timestamp).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+  expect(entry(JSON.stringify(once), "0.3.5.0", true)[0].versions.map((v: any) => v.version)).toEqual(["0.3.5.0", "0.3.4.0", "0.3.3.0"]);
+  expect(entry(feed, "0.3.4.7", false)[0].versions.map((v: any) => v.version)).toEqual(["0.3.4.7"]);
 });
 
 test("this repo's public feed passes", () => {

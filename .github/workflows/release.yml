@@ -28,6 +28,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash # -eo pipefail: a failure anywhere in a pipe stops the step
+
 jobs:
   cut:
     if: github.event_name == 'workflow_dispatch'
@@ -70,10 +74,22 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           # Asks GitHub which PR this commit came from; a squash title can be reworded. Same-repo only.
-          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" | jq -r --arg repo "$GITHUB_REPOSITORY" '
+          # Right after a merge GitHub can answer with no PR at all, so an empty answer is asked again. Every
+          # push to main that starts this job comes from a PR, so one that still has none is an error, not
+          # "not a release": a release that didn't happen must never look green.
+          for attempt in 1 2 3 4 5 6; do
+            prs=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls")
+            [ "$(jq length <<<"$prs")" -gt 0 ] && break
+            if [ "$attempt" = 6 ]; then
+              echo "::error::GitHub lists no PR for $GITHUB_SHA after a minute. If it was a merged release PR, re-run this job."
+              exit 1
+            fi
+            sleep 10
+          done
+          pr=$(jq -r --arg repo "$GITHUB_REPOSITORY" '
             map(select(.merged_at and .base.ref == "main" and .head.repo.full_name == $repo
                        and (.head.ref | test("^release/v[0-9]+[.][0-9]+[.][0-9]+$"))))
-            | first | select(.) | "\(.head.ref) \(.head.sha)"')
+            | first | select(.) | "\(.head.ref) \(.head.sha)"' <<<"$prs")
           if [ -z "$pr" ]; then
             echo "Not a release PR: nothing to tag."
             exit 0
@@ -92,19 +108,28 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # Two runs at once would race to publish and to push the feed.
+    concurrency:
+      group: release-publish
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # main's history, to check the tag is on it
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
+      # Before anything is published: a mistyped or stray tag in the hotfix lane must not become the latest release.
       - name: Work out the version
         id: version
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          v="${TAG#v}"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$TAG is not on main's history. Delete the tag; only main's commits are released."
+            exit 1
+          fi
           # Jellyfin versions have four parts; tags have three.
-          case "$v" in *.*.*.*) ;; *) v="$v.0" ;; esac
-          echo "version=$v" >> "$GITHUB_OUTPUT"
+          bun tools/release/feed.ts release-version "$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Test and package
         id: build
@@ -117,10 +142,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           ZIP: ${{ steps.build.outputs.zip }}
+        # A re-run after a later step failed finds the release made: it replaces the zip, whose checksum the
+        # feed step below then records.
         run: |
           # Named, or GitHub may start the notes at a -dev tag.
           last=$(gh release list --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')
-          gh release create "$TAG" "$ZIP" --title "$TAG" --latest --generate-notes ${last:+--notes-start-tag "$last"}
+          gh release create "$TAG" "$ZIP" --title "$TAG" --latest --generate-notes ${last:+--notes-start-tag "$last"} \
+            || gh release upload "$TAG" "$ZIP" --clobber
 
       - name: Add the version to manifest.json on main
         env:
@@ -130,20 +158,24 @@ jobs:
           MD5: ${{ steps.build.outputs.md5 }}
           ABI: ${{ steps.build.outputs.target-abi }}
         run: |
-          git fetch --depth 1 origin main
-          git checkout -B main origin/main
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ZIP}"
-          jq --arg v "$VERSION" --arg abi "$ABI" --arg url "$url" --arg md5 "$MD5" \
-             --arg log "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" \
-             --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-             '.[0].versions = [{version: $v, changelog: $log, targetAbi: $abi, sourceUrl: $url, checksum: $md5, timestamp: $ts}] + .[0].versions' \
-             manifest.json > manifest.tmp
-          mv manifest.tmp manifest.json
-          bun tools/release/feed.ts check main
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "chore: release $VERSION"
-          git push origin main
+          # Rebuilt from main's latest on each try, so a commit landing meanwhile is kept. feed-entry.jq replaces
+          # this version's entry if a re-run finds it there.
+          for _ in 1 2 3; do
+            git fetch origin main
+            git checkout -B main origin/main
+            jq --arg v "$VERSION" --arg abi "$ABI" --arg url "$url" --arg md5 "$MD5" \
+               --arg log "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" \
+               --argjson keep true -f tools/release/feed-entry.jq manifest.json > "$RUNNER_TEMP/manifest.json"
+            mv "$RUNNER_TEMP/manifest.json" manifest.json
+            bun tools/release/feed.ts check main
+            git commit -am "chore: release $VERSION"
+            git push origin main && exit 0
+            sleep 5
+          done
+          exit 1
 
   copy-back:
     needs: release
@@ -168,7 +200,7 @@ jobs:
           git config user.email "kr8vka0z-release-bot@users.noreply.github.com"
           # A merge, never a squash: it makes main an ancestor of dev, which the next cut requires.
           # main adds nothing but its manifest.json and any hotfix; dev's manifest-dev.json is on one side only.
-          for attempt in 1 2 3; do
+          for _ in 1 2 3; do
             git fetch origin main dev
             git checkout -B dev origin/dev
             if ! git merge --no-ff --no-edit -m "chore: copy main back into dev after $TAG" origin/main; then

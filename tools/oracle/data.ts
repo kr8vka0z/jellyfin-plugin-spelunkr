@@ -2,6 +2,7 @@
 // or from a local mirror with the same relative paths (test fixtures). Shared by oracle.ts and tools/check.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
+import { addChannelVersion, createChannel } from "../../Jellyfin.Plugin.Spelunkr/Schedule/schedule.js";
 
 export const BUCKET = "https://data.spelunkr.tv/";
 
@@ -41,4 +42,32 @@ export async function readText(path: string, dataDir?: string, saveDir?: string)
     writeFileSync(target, text);
   }
   return text;
+}
+
+export type LoadedVersion = { pointer: any; text: string; platform: string | null; details: string | null };
+
+/**
+ * Reads every version a lineup channel lists: its manifest, the platform file the manifest names (read once per
+ * file), and, if `withDetails`, its details file. The one place the tools walk a channel's files, so oracle (and its
+ * --save mirror) and the daily check read the same set.
+ */
+export async function loadVersions(pointers: any[], read: (path: string) => Promise<string>, withDetails = false): Promise<LoadedVersion[]> {
+  const platforms = new Map<string, string>();
+  const out: LoadedVersion[] = [];
+  for (const pointer of pointers) {
+    const text = await read(pointer.manifest);
+    const platformPath = JSON.parse(text).platform;
+    if (platformPath && !platforms.has(platformPath)) platforms.set(platformPath, await read(platformPath));
+    const platform = platformPath ? platforms.get(platformPath)! : null;
+    const details = withDetails && pointer.details ? await read(pointer.details) : null;
+    out.push({ pointer, text, platform, details });
+  }
+  return out;
+}
+
+/** A schedule channel (schedule.js) holding the loaded versions. */
+export function toChannel(channelId: string, versions: LoadedVersion[]) {
+  const channel = createChannel(channelId);
+  for (const v of versions) addChannelVersion(channel, v.text, v.platform, JSON.stringify(v.pointer));
+  return channel;
 }

@@ -74,3 +74,12 @@ test("incident-2026-11-17-var-prefix: the version builder may open with a var de
   expect(run.exitCode).toBe(0);
   expect(readFileSync(out, "utf8")).toContain("function $b(e,t,n){var i;const r=");
 });
+
+// A second function that reads `.under` would otherwise be exported as clipOf if it came first.
+test("an anchor inside the cut that matches twice stops the extractor", () => {
+  const dir = mkdtempSync(join(tmpdir(), "extract-test-"));
+  writeFileSync(join(dir, "bundle.js"), bundle.replace("function $c(e){", "function $z(e){return(e==null?void 0:e.under)===!0}function $c(e){"));
+  const run = Bun.spawnSync(["bun", join(import.meta.dir, "extract.ts"), "--bundle", join(dir, "bundle.js"), "--out", join(dir, "engine.js")]);
+  expect(run.exitCode).toBe(1);
+  expect(run.stderr.toString()).toContain('anchor "clip of a bump" matched 2 times');
+});
