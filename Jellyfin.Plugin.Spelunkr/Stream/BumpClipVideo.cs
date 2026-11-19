@@ -94,7 +94,7 @@ public static class BumpClipVideo
 
         // Hold steps on the clip chain's clock, with their step numbers. A clip that plays on past the last slide keeps
         // that slide's step through the tail (the site leaves data-hold-step set there).
-        var lastEndMs = clip.Slides.Count > 0 ? clip.Slides[^1].EndMs : clip.EndMs;
+        var lastEndMs = clip.Slides[^1].EndMs;
         var holds = clip.Slides.Where(s => s.HoldStep >= 0)
             .Select(s => (Step: s.HoldStep, From: (s.StartMs / 1000.0) - from, To: ((s.EndMs == lastEndMs ? clip.EndMs : s.EndMs) / 1000.0) - from))
             .Where(h => h.To > 0).ToList();
