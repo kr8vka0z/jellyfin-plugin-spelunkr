@@ -2,6 +2,9 @@
 //   bun tools/release/feed.ts test-version <run number>   prints tag=... and version=... for GitHub Actions
 //   bun tools/release/feed.ts fresh <run number> <file>   fails if that test feed already holds a later run
 //   bun tools/release/feed.ts check <branch>              fails if manifest.json holds anything but real releases
+//   bun tools/release/feed.ts release-version <tag>       prints version=X.Y.Z.0, or fails if the tag isn't vX.Y.Z
+//   bun tools/release/feed.ts target-abi                  prints the Jellyfin version the csproj files build against
+// A feed entry itself is built by feed-entry.jq, shared by both workflows that write a feed.
 import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
@@ -40,6 +43,23 @@ export function isSuperseded(feedText: string, run: number) {
   return Number(version.split(".")[3]) > run;
 }
 
+/** The four-part Jellyfin version of a release tag. Anything but vX.Y.Z is refused, before anything is published. */
+export function releaseVersion(tag: string) {
+  const v = STABLE_TAG.exec(tag)?.[1];
+  if (!v) throw new Error(`tag "${tag}" is not vX.Y.Z`);
+  return `${v}.0`;
+}
+
+/**
+ * The Jellyfin version the zip targets, read from the Jellyfin packages the projects build against, so it can't
+ * drift from them. All of them must name the same version.
+ */
+export function targetAbi(csprojTexts: string[]) {
+  const versions = new Set(csprojTexts.flatMap((t) => [...t.matchAll(/Include="Jellyfin\.(?:Controller|Model)" Version="([^"]+)"/g)].map((m) => m[1])));
+  if (versions.size !== 1) throw new Error(`want one Jellyfin package version in the csproj files, found: ${[...versions].join(", ") || "none"}`);
+  return `${[...versions][0]}.0`;
+}
+
 /** What is wrong with the text of a public manifest.json. Real releases end in .0; test builds never do. */
 export function feedProblems(text: string) {
   const versions: { version: string; sourceUrl: string }[] = JSON.parse(text)[0]?.versions ?? [];
@@ -71,8 +91,19 @@ if (import.meta.main) {
       process.exit(1);
     }
     console.log("manifest.json: real releases only");
+  } else if (command === "release-version") {
+    try {
+      console.log(`version=${releaseVersion(arg)}`);
+    } catch (e) {
+      // stderr: stdout goes into $GITHUB_OUTPUT.
+      console.error(`::error::${(e as Error).message}. Delete the tag and push vX.Y.Z.`);
+      process.exit(1);
+    }
+  } else if (command === "target-abi") {
+    const projects = ["Jellyfin.Plugin.Spelunkr/Jellyfin.Plugin.Spelunkr.csproj", "Jellyfin.Plugin.Spelunkr.Tests/Jellyfin.Plugin.Spelunkr.Tests.csproj"];
+    console.log(targetAbi(projects.map((p) => readFileSync(p, "utf8"))));
   } else {
-    console.error("usage: feed.ts test-version <run number> | fresh <run number> <file> | check <branch>");
+    console.error("usage: feed.ts test-version <run number> | fresh <run number> <file> | check <branch> | release-version <tag> | target-abi");
     process.exit(2);
   }
 }
