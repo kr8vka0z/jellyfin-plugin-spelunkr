@@ -33,7 +33,13 @@ public static class BumpClipVideo
     /// <param name="clip">The clip's plan.</param>
     /// <param name="lengthS">The clip file's length.</param>
     /// <param name="atS">Seconds from the bump's start.</param>
-    public static double ClipTimeS(BumpClip clip, double lengthS, double atS)
+    /// <param name="offsetS">
+    /// Where the fetched stretch starts in the whole clip (<see cref="ReadyClip.OffsetS"/>): the result is then a time in
+    /// that file, the same picture as the whole clip at the result plus this.
+    /// </param>
+    public static double ClipTimeS(BumpClip clip, double lengthS, double atS, double offsetS = 0) => WholeClipTimeS(clip, lengthS, atS) - offsetS;
+
+    private static double WholeClipTimeS(BumpClip clip, double lengthS, double atS)
     {
         if (!(lengthS > 0))
         {
@@ -73,23 +79,25 @@ public static class BumpClipVideo
     /// (input 0) while it is in view. Ends in a yuv420p picture ready for the cards' drawtext filters.
     /// </summary>
     /// <param name="clip">The clip's plan.</param>
-    /// <param name="lengthS">The clip file's length.</param>
+    /// <param name="file">The fetched clip.</param>
     /// <param name="offsetMs">How far into the bump the job starts.</param>
     /// <param name="width">Card width.</param>
     /// <param name="height">Card height.</param>
     /// <param name="input">The clip's input number.</param>
     /// <param name="tone">The channel color, "#RRGGBB": the duotone's tint.</param>
-    public static string Under(BumpClip clip, double lengthS, long offsetMs, int width, int height, int input, string tone)
+    public static string Under(BumpClip clip, ReadyClip file, long offsetMs, int width, int height, int input, string tone)
     {
+        var lengthS = file.LengthS;
         // Seconds from the bump's start (n) until the end, where the job's own clock is t = n - off. The clip chain runs
         // on its own clock u = n - from, starting when it first shows in this job.
         var off = offsetMs / 1000.0;
         var from = Math.Max(clip.StartMs / 1000.0, off);
-        var holdS = HoldS(clip, lengthS);
+        // Trimmed on the file's own clock: the whole clip's times less where the fetched stretch starts.
+        var holdS = HoldS(clip, lengthS) - file.OffsetS;
         var playFromS = (clip.MotionEndMs / 1000.0) - PlayS(clip, lengthS);
         // A clip shorter than its motion slides waits on its first frame; otherwise it joins at the engine's moment.
         var waitS = Math.Max(0, playFromS - from);
-        var trimFrom = Math.Clamp(waitS > 0 ? 0 : ClipTimeS(clip, lengthS, from), 0, Math.Max(0, holdS - (1 / Fps)));
+        var trimFrom = Math.Clamp(waitS > 0 ? 0 : ClipTimeS(clip, lengthS, from, file.OffsetS), 0, Math.Max(0, holdS - (1 / Fps)));
         var trimTo = Math.Max(holdS, trimFrom + (1 / Fps));
 
         // Hold steps on the clip chain's clock, with their step numbers. A clip that plays on past the last slide keeps

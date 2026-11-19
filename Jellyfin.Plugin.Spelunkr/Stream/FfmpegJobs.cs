@@ -230,7 +230,7 @@ public static class FfmpegJobs
     private static Func<bool, FfmpegJob> ClipJob(Segment segment, BumpClip plan, ReadyClip clip, BumpAudio? music, ChannelLook look, Picture p, long offsetMs, long durationMs, double outputOffsetS)
     {
         var (w, h) = p.Cabinet is null ? (p.Width, p.Height) : (p.TubeWidth, p.TubeHeight);
-        var under = BumpClipVideo.Under(plan, clip.LengthS, offsetMs, w, h, 2, look.Color);
+        var under = BumpClipVideo.Under(plan, clip, offsetMs, w, h, 2, look.Color);
         var (filter, files) = Cards(BumpCards.WithClip(segment, look), look, offsetMs, p, under);
         string[] audioIn = music is null
             ? ["-f", "lavfi", "-i", Silence]
@@ -258,7 +258,7 @@ public static class FfmpegJobs
 
     // For every input fetched over the network. -rw_timeout (microseconds) makes ffmpeg give up on a server that
     // stops sending, instead of waiting forever; reconnect covers dropped connections.
-    private static string[] Remote => ["-rw_timeout", "15000000", "-reconnect", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5"];
+    internal static string[] Remote => ["-rw_timeout", "15000000", "-reconnect", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5"];
 
     private static string[] Color(ChannelLook look, Picture p) =>
         [.. Paced, "-f", "lavfi", "-i", string.Create(CultureInfo.InvariantCulture, $"color=c=0x{look.Color.TrimStart('#')}:s={(p.Cabinet is null ? p.Width : p.TubeWidth)}x{(p.Cabinet is null ? p.Height : p.TubeHeight)}:r={Picture.Fps}")];

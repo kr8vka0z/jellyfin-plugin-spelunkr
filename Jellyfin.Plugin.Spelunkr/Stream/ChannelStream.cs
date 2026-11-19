@@ -135,7 +135,7 @@ internal sealed class ChannelStream : ILiveStream
                             segment.Url is null ? null : await _originals.FindAsync(segment.Url, c).ConfigureAwait(false),
                             await PictureForAsync(segment, c).ConfigureAwait(false),
                             () => _originals.Reject(segment.Url!),
-                            segment.Clip is { } clip ? _clips.Ready(clip.Src) : null).ConfigureAwait(false);
+                            segment.Clip is { } clip ? _clips.Ready(clip) : null).ConfigureAwait(false);
                     },
                     async (segment, durationMs, c) => await SegmentPlayer.PlayTuningInAsync(segment, _look, durationMs, Run, c, await PictureForAsync(segment, c).ConfigureAwait(false)).ConfigureAwait(false),
                     Task.Delay,
@@ -165,7 +165,7 @@ internal sealed class ChannelStream : ILiveStream
     {
         if (segment.Clip is { } clip)
         {
-            _ = _clips.Prefetch(clip.Src);
+            _ = _clips.Prefetch(clip);
         }
 
         _ = Task.Run(async () =>
@@ -174,7 +174,7 @@ internal sealed class ChannelStream : ILiveStream
             {
                 if ((await _source.SegmentAtAsync(_channelId, segment.EndMs, _cts.Token).ConfigureAwait(false)).Clip is { } next)
                 {
-                    _ = _clips.Prefetch(next.Src);
+                    _ = _clips.Prefetch(next);
                 }
             }
             catch (Exception ex)

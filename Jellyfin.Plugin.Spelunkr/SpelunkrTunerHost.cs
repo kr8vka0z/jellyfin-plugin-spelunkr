@@ -35,12 +35,12 @@ public sealed class SpelunkrTunerHost : ITunerHost
     private readonly ILogger<SpelunkrTunerHost> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="SpelunkrTunerHost"/> class.</summary>
-    public SpelunkrTunerHost(SpelunkrSource source, ArchiveOriginals originals, IHttpClientFactory httpClientFactory, IConfigurationManager config, IMediaEncoder mediaEncoder, IServerApplicationHost appHost, ILogger<SpelunkrTunerHost> logger)
+    public SpelunkrTunerHost(SpelunkrSource source, ArchiveOriginals originals, IConfigurationManager config, IMediaEncoder mediaEncoder, IServerApplicationHost appHost, ILogger<SpelunkrTunerHost> logger)
     {
         _source = source;
         _originals = originals;
-        // Kept in the cache folder: a clip is only ever a re-download away.
-        _clips = new BumpClips(httpClientFactory, () => mediaEncoder.ProbePath, Path.Combine(config.CommonApplicationPaths.CachePath, "spelunkr-clips"), logger);
+        // Kept in the cache folder: a clip is only ever a re-fetch away.
+        _clips = new BumpClips(() => mediaEncoder.EncoderPath, () => mediaEncoder.ProbePath, Path.Combine(config.CommonApplicationPaths.CachePath, "spelunkr-clips"), logger);
         _config = config;
         _mediaEncoder = mediaEncoder;
         _appHost = appHost;
