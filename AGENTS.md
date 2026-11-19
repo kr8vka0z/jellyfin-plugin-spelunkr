@@ -4,7 +4,8 @@
 
 ## Build / test
 
-- `dotnet test` (net10.0 SDK; `global.json` opts into Microsoft.Testing.Platform). Warnings are errors.
+- `dotnet test` (net10.0 SDK; `global.json` opts into Microsoft.Testing.Platform). Warnings are errors. The tests that
+  run a real ffmpeg skip when none is on PATH; `SPELUNKR_FFMPEG=<path>` points them at another build (Jellyfin's own).
 - `bun tools/oracle/oracle.ts now <unixMs>`: what is on now, per the embedded engine, from live data.
 - `bun tools/check/check.ts --skip-live`: the daily check without the browser part (run `bun install` in `tools/check` first for the full one).
 

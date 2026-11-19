@@ -4,19 +4,13 @@ using System.Globalization;
 using Jellyfin.Plugin.Spelunkr.Schedule;
 using Jellyfin.Plugin.Spelunkr.Stream;
 using Xunit;
+using static Jellyfin.Plugin.Spelunkr.Tests.TestKit;
 
 namespace Jellyfin.Plugin.Spelunkr.Tests;
 
 public class StreamPlanTests
 {
     private static readonly ChannelLook Gumshoe = new("GUMSHOE", "#E8DFC8");
-
-    // An "open" bump straight from the oracle (Fixtures/timeline-1793217600000.jsonl, index 173).
-    internal static Segment OpenBump() => ScheduleEngineTests.GumshoeEngine()
-        .SegmentsBetween("gumshoe", 1_793_220_818_819, 1_793_220_818_820, "https://audio.spelunkr.tv/bumps/")[0];
-
-    private static string Arg(IReadOnlyList<string> args, string flag, int occurrence = 0) =>
-        args[args.Select((a, i) => (a, i)).Where(x => x.a == flag).ElementAt(occurrence).i + 1];
 
     [Fact]
     public void Open_bump_shows_the_channel_name_during_the_lead_in_then_each_slide_in_turn()
@@ -60,7 +54,7 @@ public class StreamPlanTests
     {
         // From the oracle (Fixtures/timeline-homeroom-1793217600000.jsonl): a 10 s card before "Friendship Begins At Home".
         var card = ScheduleEngineTests.Engine("homeroom")
-            .SegmentsBetween("homeroom", 1_793_217_695_269, 1_793_217_695_270, "https://audio.spelunkr.tv/bumps/")[0];
+            .SegmentsBetween("homeroom", 1_793_217_695_269, 1_793_217_695_270, AudioBase)[0];
         Assert.Equal("up-next", card.Kind);
 
         var job = FfmpegJobs.For(card, new ChannelLook("HOMEROOM", "#336699"), 0, card.LengthMs, 0)[0];
@@ -131,6 +125,22 @@ public class StreamPlanTests
         Assert.Contains("enable='gte(t,-0.500)*lt(t,2.375)'", vf, StringComparison.Ordinal);
         var musicStart = double.Parse(Arg(job.Args, "-ss"), CultureInfo.InvariantCulture);
         Assert.Equal(bump.Channel!.Audio!.StartOffsetS + 4, musicStart, 3);
+    }
+
+    [Theory]
+    [InlineData("#E8DFC8", "0xE8DFC8")]
+    [InlineData("#fff", "0x666666")] // ffmpeg reads 0xfff as another color, or not at all
+    [InlineData("#12345 ", "0x666666")] // whitespace that a hex number parse lets through
+    [InlineData("red", "0x666666")]
+    [InlineData("#E8DFC8:s=1x1", "0x666666")] // would rewrite the filter string
+    [InlineData(null, "0x666666")]
+    public void An_odd_channel_color_becomes_grey_so_the_channel_still_opens(string? color, string expected)
+    {
+        var look = new ChannelLook("X", color);
+
+        var jobs = FfmpegJobs.TuningIn(new Segment { Kind = "show", Title = "X" }, look, 4_000).Concat(FfmpegJobs.For(OpenBump(), look, 0, 5_000, 0));
+
+        Assert.All(jobs, j => Assert.Contains($"color=c={expected}:", Inputs(j.Args).First(i => i.StartsWith("color=", StringComparison.Ordinal)), StringComparison.Ordinal));
     }
 
     [Theory]
