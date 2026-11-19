@@ -60,6 +60,7 @@ public static class FfmpegJobs
 {
     // Pad both tracks past the end of the input, then cut with -t: every job lasts exactly its planned length,
     // even when the file is a little shorter than the manifest says, so the stream never drifts off schedule.
+    internal const int ShortfallPadS = 10;
     private const string PadVideo = ",tpad=stop=-1:stop_mode=clone";
     private const string Audio = "aresample=48000,aformat=channel_layouts=stereo";
     private const string Silence = "anullsrc=r=48000:cl=stereo";
