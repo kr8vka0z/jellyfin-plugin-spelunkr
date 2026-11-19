@@ -68,12 +68,7 @@ const problemKind = (line: string) =>
  */
 export function groupProblems(problems: string[]): string {
   const keep = 5;
-  const kinds = new Map<string, string[]>();
-  for (const p of problems) {
-    const k = problemKind(p);
-    kinds.set(k, [...(kinds.get(k) ?? []), p]);
-  }
-  return [...kinds.entries()]
+  return [...Map.groupBy(problems, problemKind).entries()]
     .flatMap(([kind, lines]) => [...lines.slice(0, keep), ...(lines.length > keep ? [`... and ${lines.length - keep} more of "${kind}"`] : [])])
     .join("\n");
 }
