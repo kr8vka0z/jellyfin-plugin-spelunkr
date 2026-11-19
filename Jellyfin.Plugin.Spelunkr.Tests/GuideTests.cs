@@ -2,6 +2,7 @@
 // with ids that stay the same between guide refreshes.
 using Jellyfin.Plugin.Spelunkr.Guide;
 using Jellyfin.Plugin.Spelunkr.Schedule;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Jellyfin.Plugin.Spelunkr.Tests;
@@ -78,6 +79,30 @@ public class GuideTests
         Assert.NotEmpty(programs);
         Assert.All(programs, p => Assert.False(p.IsMovie));
         Assert.All(programs, p => Assert.Null(p.Overview)); // no details file in the fixtures for homeroom: titles only
+    }
+
+    [Fact]
+    public async Task Entries_never_end_before_they_start_or_overlap_at_a_mid_cycle_takeover()
+    {
+        // A version that takes over an hour into its own cycle (epochMs before effectiveAtMs): the engine reports
+        // its first film from where that film began in the new cycle, before the takeover and before the film then on.
+        const long takeover = 1_793_404_800_000;
+        var lineup = SpelunkrSourceTests.LineupWith(l => SpelunkrSourceTests.Versions(l, "gumshoe").Insert(0, SpelunkrSourceTests.GumshoePointer(20, takeover - 3_600_000, takeover)));
+        var guide = new SpelunkrGuide(new SpelunkrSource(SpelunkrSourceTests.Reader(() => lineup), NullLogger<SpelunkrSource>.Instance));
+        var at = DateTimeOffset.FromUnixTimeMilliseconds(takeover).UtcDateTime;
+
+        var programs = (await guide.GetProgramsAsync(new(), "spelunkr_gumshoe", at.AddHours(-6), at.AddHours(6), CancellationToken.None)).ToList();
+
+        Assert.All(programs, p => Assert.True(p.EndDate > p.StartDate, $"{p.Name} {p.StartDate:o} -> {p.EndDate:o}"));
+        for (var i = 1; i < programs.Count; i++)
+        {
+            Assert.True(programs[i].StartDate >= programs[i - 1].EndDate, $"{programs[i].Name} starts inside {programs[i - 1].Name}");
+        }
+
+        // The film on at the takeover runs until it (the engine cuts it there), and the new version's starts then.
+        var cut = Assert.Single(programs, p => p.EndDate == at);
+        Assert.Contains("-19-", cut.Id, StringComparison.Ordinal);
+        Assert.Contains("-20-", programs[programs.IndexOf(cut) + 1].Id, StringComparison.Ordinal);
     }
 
     [Fact]

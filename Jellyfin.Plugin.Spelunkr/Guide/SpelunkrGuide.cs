@@ -33,23 +33,11 @@ public sealed class SpelunkrGuide : IListingsProvider
         var id = channelId[SpelunkrTunerHost.ChannelIdPrefix.Length..];
         var fromMs = new DateTimeOffset(startDateUtc, TimeSpan.Zero).ToUnixTimeMilliseconds();
         var toMs = new DateTimeOffset(endDateUtc, TimeSpan.Zero).ToUnixTimeMilliseconds();
-        var segments = (await _source.SegmentsBetweenAsync(id, fromMs, toMs, cancellationToken).ConfigureAwait(false)).ToList();
-
         // A window that starts or ends during a break would cut the films at its edges (an entry runs from a film's
-        // start to the next film's start). So reach back to the film before the window and on to the first film
-        // that starts after it, then keep the entries that overlap the window.
-        // ponytail: capped at 50 steps each way; a channel with no films for 50 segments shows a partial edge.
-        for (var i = 0; i < 50 && segments.Count > 0 && segments[0].Kind != "show"; i++)
-        {
-            segments.Insert(0, await _source.SegmentAtAsync(id, segments[0].StartMs - 1, cancellationToken).ConfigureAwait(false));
-        }
-
-        for (var i = 0; i < 50 && segments.Count > 0 && !segments.Any(s => s.Kind == "show" && s.StartMs >= toMs); i++)
-        {
-            segments.Add(await _source.SegmentAtAsync(id, segments[^1].EndMs, cancellationToken).ConfigureAwait(false));
-        }
-
-        return GuidePrograms.Build(segments, channelId, s => _source.Details(id, s)).Where(p => p.EndDate > startDateUtc && p.StartDate < endDateUtc).ToList();
+        // start to the next film's start), so the engine reaches back to the film before the window and on to the
+        // first film after it (schedule.js showsBetween); here only the entries that overlap the window are kept.
+        var shows = await _source.ShowsBetweenAsync(id, fromMs, toMs, cancellationToken).ConfigureAwait(false);
+        return GuidePrograms.Build(shows, channelId, s => _source.Details(id, s)).Where(p => p.EndDate > startDateUtc && p.StartDate < endDateUtc).ToList();
     }
 
     /// <inheritdoc />

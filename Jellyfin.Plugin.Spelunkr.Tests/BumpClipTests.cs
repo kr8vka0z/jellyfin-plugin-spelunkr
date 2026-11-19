@@ -7,6 +7,7 @@ using Jellyfin.Plugin.Spelunkr.Stream;
 using Jint;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using static Jellyfin.Plugin.Spelunkr.Tests.TestKit;
 
 namespace Jellyfin.Plugin.Spelunkr.Tests;
 
@@ -16,11 +17,17 @@ public class BumpClipTests
     private static readonly ChannelLook Gumshoe = new("GUMSHOE", "#E8DFC8");
     private static readonly ReadyClip Clip = new("/clips/c.mp4", 12.545879);
 
+    // One engine run per look: a Segment is an immutable record, so tests can share it.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, string?, string?, string?, bool), Segment> ClipBumps = new();
+
     /// <summary>
-    /// gs-075 (StreamPlanTests.OpenBump) with a made-up clip on its first slide, the second slide under it, and the last
+    /// gs-075 (TestKit.OpenBump) with a made-up clip on its first slide, the second slide under it, and the last
     /// two as hold steps: the same manifest edit a preview build makes.
     /// </summary>
     internal static Segment ClipBump(string look = "duozoom", string? zoomAt = null, string? wordsAt = null, string? wordsEdge = null, bool playOn = false)
+        => ClipBumps.GetOrAdd((look, zoomAt, wordsAt, wordsEdge, playOn), _ => BuildClipBump(look, zoomAt, wordsAt, wordsEdge, playOn));
+
+    private static Segment BuildClipBump(string look, string? zoomAt, string? wordsAt, string? wordsEdge, bool playOn)
     {
         var engine = new ScheduleEngine();
         var lineup = JsonNode.Parse(File.ReadAllText(Path.Combine(ScheduleEngineTests.FixtureDir, "lineup.json")))!;
@@ -52,10 +59,8 @@ public class BumpClipTests
             engine.AddVersion("gumshoe", manifest.ToJsonString(), platform, pointer.ToJsonString());
         }
 
-        return engine.SegmentsBetween("gumshoe", 1_793_220_818_819, 1_793_220_818_820, "https://audio.spelunkr.tv/bumps/")[0];
+        return engine.SegmentsBetween("gumshoe", 1_793_220_818_819, 1_793_220_818_820, AudioBase)[0];
     }
-
-    private static string Graph(FfmpegJob job) => job.Args[job.Args.ToList().IndexOf("-filter_complex") + 1];
 
     private static string Ms(long ms) => (ms / 1000.0).ToString("0.000", CultureInfo.InvariantCulture);
 
@@ -68,7 +73,7 @@ public class BumpClipTests
         Assert.Equal((0, 2, 3_500L, 12_560L, 19_035L), (clip.First, clip.Motion, clip.StartMs, clip.MotionEndMs, clip.EndMs));
         Assert.Equal([-1, -1, 0, 1], clip.Slides.Select(s => s.HoldStep));
         Assert.Equal([true, true, false, false], clip.Slides.Select(s => s.Hidden));
-        Assert.Null(StreamPlanTests.OpenBump().Clip);
+        Assert.Null(OpenBump().Clip);
     }
 
     [Theory]
@@ -103,7 +108,7 @@ public class BumpClipTests
     {
         var bump = ClipBump();
 
-        var graph = Graph(FfmpegJobs.For(bump, Gumshoe, offsetMs, bump.LengthMs - offsetMs, 0, clip: Clip)[0]);
+        var graph = Filter(FfmpegJobs.For(bump, Gumshoe, offsetMs, bump.LengthMs - offsetMs, 0, clip: Clip)[0]);
 
         Assert.Contains(trim, graph, StringComparison.Ordinal);
         Assert.Contains(wait, graph, StringComparison.Ordinal);
@@ -117,7 +122,7 @@ public class BumpClipTests
     {
         var bump = ClipBump();
 
-        var graph = Graph(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip with { LengthS = 4 })[0]);
+        var graph = Filter(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip with { LengthS = 4 })[0]);
 
         // 9.06 s of motion, a 4 s clip: frame 0 for 5.06 s, then 0-3.95 s of it, ending as the motion slides do.
         Assert.Contains("trim=start=0.000:end=3.950", graph, StringComparison.Ordinal);
@@ -134,7 +139,7 @@ public class BumpClipTests
         var bump = ClipBump(look);
 
         var job = FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0];
-        var graph = Graph(job);
+        var graph = Filter(job);
 
         Assert.Equal(zooms, graph.Contains("zoompan", StringComparison.Ordinal));
         Assert.Equal(duotone, graph.Contains("colorchannelmixer", StringComparison.Ordinal));
@@ -166,7 +171,7 @@ public class BumpClipTests
     {
         var bump = ClipBump("zoom", "20% 75%");
 
-        var graph = Graph(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
+        var graph = Filter(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
 
         Assert.Contains(":x='iw*0.200*(1-1/zoom)':y='ih*0.750*(1-1/zoom)':", graph, StringComparison.Ordinal);
     }
@@ -197,7 +202,7 @@ public class BumpClipTests
     {
         var bump = ClipBump(look, "50% 30%");
 
-        var graph = Graph(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
+        var graph = Filter(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
 
         // CSS object-fit: cover with object-position 50% 30%.
         var filled = "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720:(iw-ow)*0.500:(ih-oh)*0.300,setsar=1,format=rgb24";
@@ -212,7 +217,7 @@ public class BumpClipTests
         var bump = ClipBump("zoom", playOn: true);
         var clip = bump.Clip!;
 
-        var graph = Graph(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
+        var graph = Filter(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
 
         // The site's span ends at its gap start: the last slide's end (19.035 s) plus the 1 s channel-black tail. The clip
         // keeps moving to there, so its clock runs a second later than a clip that stops with the slides.
@@ -220,7 +225,7 @@ public class BumpClipTests
         Assert.Contains("fade=t=out:st=15.535:d=0.9:color=black", graph, StringComparison.Ordinal);
         Assert.Contains("overlay=eof_action=pass:enable='gte(t,3.500)*lt(t,20.035)'", graph, StringComparison.Ordinal);
         Assert.Contains("if(gte(it,13.035)*lt(it,16.535),1.55,", graph, StringComparison.Ordinal); // last step held through the tail
-        Assert.DoesNotContain("fade=", Graph(FfmpegJobs.For(ClipBump("zoom"), Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]), StringComparison.Ordinal);
+        Assert.DoesNotContain("fade=", Filter(FfmpegJobs.For(ClipBump("zoom"), Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -232,18 +237,17 @@ public class BumpClipTests
     {
         var bump = ClipBump("wide", wordsAt: wordsAt, wordsEdge: wordsEdge);
 
-        var graph = Graph(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
+        var graph = Filter(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
 
         Assert.Contains(drawn, graph, StringComparison.Ordinal);
         Assert.Contains("fontcolor=0x1A1A1A:fontsize=48:line_spacing=14:text_align=C:x=(w-tw)/2:y=(h-th)/2:", graph, StringComparison.Ordinal); // the lead-in name card is unchanged
     }
 
     [Theory]
-    [InlineData("cpu")]
-    [InlineData("gpu")]
+    [MemberData(nameof(Modes), MemberType = typeof(TestKit))]
     public void Without_a_ready_clip_the_break_is_exactly_todays_and_a_clip_job_only_goes_in_front(string mode)
     {
-        var picture = mode == "gpu" ? Picture.Gpu("/test/render-node") : Picture.Cpu;
+        var picture = PictureFor(mode);
         var bump = ClipBump();
         var plain = bump with { Clip = null };
         string Args(IEnumerable<FfmpegJob> jobs) => string.Join('\n', jobs.Select(j => string.Join(' ', j.Args)));
@@ -273,7 +277,7 @@ public class BumpClipTests
         Assert.Equal(bump.LengthMs, emitted);
         Assert.Contains(Clip.Path, ran[0].Args);
         Assert.DoesNotContain(Clip.Path, ran[1].Args);
-        Assert.Equal(Graph(FfmpegJobs.For(bump with { Clip = null }, Gumshoe, 6_000, bump.LengthMs - 6_000, 6)[0]), Graph(ran[1]));
+        Assert.Equal(Filter(FfmpegJobs.For(bump with { Clip = null }, Gumshoe, 6_000, bump.LengthMs - 6_000, 6)[0]), Filter(ran[1]));
     }
 
     [Fact]
@@ -329,24 +333,13 @@ public class BumpClipTests
         var dir = Directory.CreateTempSubdirectory("spelunkr-probe").FullName;
         try
         {
-            string Script(string name, string body)
-            {
-                var path = Path.Combine(dir, name);
-                File.WriteAllText(path, "#!/bin/sh\n" + body + "\n");
-                if (OperatingSystem.IsLinux())
-                {
-                    File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-                }
-                return path;
-            }
-
             // 1 MB on stderr, far past a pipe's buffer, then the length.
-            var chatty = Script("chatty", "head -c 1048576 /dev/zero >&2; echo 12.5");
+            var chatty = Script(dir, "chatty", "head -c 1048576 /dev/zero >&2; echo 12.5");
             using var quick = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             Assert.Equal(12.5, await BumpClips.ProbeAsync(chatty, "x.mp4", quick.Token));
 
             var pidFile = Path.Combine(dir, "pid");
-            var stalled = Script("stalled", $"echo $$ > {pidFile}; exec sleep 30");
+            var stalled = Script(dir, "stalled", $"echo $$ > {pidFile}; exec sleep 30");
             using var soon = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => BumpClips.ProbeAsync(stalled, "x.mp4", soon.Token));
             var pid = int.Parse(File.ReadAllText(pidFile).Trim(), CultureInfo.InvariantCulture);

@@ -17,19 +17,31 @@ internal static class GuidePrograms
     /// <param name="details">Spelunkr's write-up of a film, if known.</param>
     public static List<ProgramInfo> Build(IReadOnlyList<Segment> segments, string channelId, Func<Segment, ItemDetails?>? details = null)
     {
-        var shows = segments.Where(s => s.Kind == "show").ToList();
+        var shows = segments.Where(s => s.Kind == SegmentKind.Show).ToList();
         var programs = new List<ProgramInfo>(shows.Count);
+        var previousEndMs = long.MinValue;
         for (var i = 0; i < shows.Count; i++)
         {
             var s = shows[i];
-            var endMs = i + 1 < shows.Count ? shows[i + 1].StartMs : s.EndMs;
+            // At a takeover by a version whose epoch is earlier than its start, the engine reports the new version's
+            // first film from where it began in its own cycle, which can be before this film starts. This film then
+            // runs to its own end (the engine cuts it at the takeover), and the next one starts no earlier than that.
+            var nextMs = i + 1 < shows.Count ? shows[i + 1].StartMs : s.EndMs;
+            var endMs = nextMs > s.StartMs ? nextMs : s.EndMs;
+            var startMs = Math.Max(s.StartMs, previousEndMs);
+            if (endMs <= startMs)
+            {
+                continue;
+            }
+
+            previousEndMs = endMs;
             programs.Add(new ProgramInfo
             {
                 // version-cycle-index names one slot in the schedule, so a refresh updates rather than duplicates it.
                 Id = string.Create(CultureInfo.InvariantCulture, $"{channelId}-{s.Version}-{s.Cycle}-{s.Index}"),
                 ChannelId = channelId,
                 Name = s.Title ?? s.Id,
-                StartDate = DateTimeOffset.FromUnixTimeMilliseconds(s.StartMs).UtcDateTime,
+                StartDate = DateTimeOffset.FromUnixTimeMilliseconds(startMs).UtcDateTime,
                 EndDate = DateTimeOffset.FromUnixTimeMilliseconds(endMs).UtcDateTime,
                 ProductionYear = int.TryParse(s.Year, NumberStyles.Integer, CultureInfo.InvariantCulture, out var y) ? y : null,
                 // Never a movie, even on film channels: Jellyfin collects movies into a "Movies" row on the Live TV

@@ -68,7 +68,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
         }
 
         var channels = await _source.GetChannelsAsync(cancellationToken).ConfigureAwait(false);
-        var logos = Path.Combine(_config.CommonApplicationPaths.CachePath, "spelunkr-logos");
+        var logos = LogosDir(_config);
         return channels.Select(c =>
         {
             var info = ToChannelInfo(c, tuner.Id);
@@ -131,8 +131,14 @@ public sealed class SpelunkrTunerHost : ITunerHost
     internal static string CabinetsDir(IConfigurationManager config) => Path.Combine(config.CommonApplicationPaths.DataPath, "spelunkr-cabinets");
 
     /// <summary>
+    /// Where channel logos are kept. In the data folder for the same reason as <see cref="CabinetsDir"/>: Jellyfin
+    /// keeps a channel's logo as a path to this file, and the cache cleaner would delete it after a month.
+    /// </summary>
+    internal static string LogosDir(IConfigurationManager config) => Path.Combine(config.CommonApplicationPaths.DataPath, "spelunkr-logos");
+
+    /// <summary>
     /// The channel's logo as a PNG file Jellyfin reads directly, drawn on first use. The name carries a hash of
-    /// the logo, so a redrawn logo gets a new file. Re-drawn whenever missing (the cache folder can be emptied).
+    /// the logo, so a redrawn logo gets a new file. Re-drawn whenever missing (say, the folder was cleared by hand).
     /// The file name is the hash alone: the channel id comes from Spelunkr's data and never goes into a path.
     /// </summary>
     internal static string? LogoFile(string dir, LineupChannel c, ILogger logger)
@@ -142,17 +148,12 @@ public sealed class SpelunkrTunerHost : ITunerHost
             return null;
         }
 
-        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(c.Color + string.Concat(rows))))[..16];
-        var path = Path.Combine(dir, $"{hash}.png");
+        var path = Path.Combine(dir, StoredFile.Name(System.Text.Encoding.UTF8.GetBytes(c.Color + string.Concat(rows))) + ".png");
         try
         {
-            if (!File.Exists(path))
-            {
-                Directory.CreateDirectory(dir);
-                File.WriteAllBytes(path, Guide.ChannelLogo.RenderPng(rows, c.Color));
-            }
-
-            return path;
+            // Through a temp file: two channel lists asked for at once must not hand Jellyfin a half-written logo.
+            Directory.CreateDirectory(dir);
+            return File.Exists(path) ? path : StoredFile.Save(path, Guide.ChannelLogo.RenderPng(rows, c.Color));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -220,11 +221,11 @@ public sealed class SpelunkrTunerHost : ITunerHost
         [
             new MediaStream
             {
-                Type = MediaStreamType.Video, Index = 0, Codec = "h264", Profile = "High", Level = 41, PixelFormat = "yuv420p",
-                Width = picture.Width, Height = picture.Height, AverageFrameRate = 30, RealFrameRate = 30, AspectRatio = "16:9",
+                Type = MediaStreamType.Video, Index = 0, Codec = "h264", Profile = Picture.Profile, Level = Picture.Level, PixelFormat = "yuv420p",
+                Width = picture.Width, Height = picture.Height, AverageFrameRate = Picture.Fps, RealFrameRate = Picture.Fps, AspectRatio = "16:9",
                 BitRate = picture.MaxRateK * 1000, IsInterlaced = false,
             },
-            new MediaStream { Type = MediaStreamType.Audio, Index = 1, Codec = "aac", Channels = 2, ChannelLayout = "stereo", SampleRate = 48000, BitRate = 128_000 },
+            new MediaStream { Type = MediaStreamType.Audio, Index = 1, Codec = "aac", Channels = 2, ChannelLayout = "stereo", SampleRate = Picture.AudioRate, BitRate = Picture.AudioKbps * 1000 },
         ],
         SupportsProbing = false,
         AnalyzeDurationMs = 3000,

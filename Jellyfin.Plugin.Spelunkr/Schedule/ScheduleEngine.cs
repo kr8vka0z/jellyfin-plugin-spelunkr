@@ -14,7 +14,9 @@ public sealed class ScheduleEngine
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     // Jint engines are not thread-safe; every call goes through this lock. A lookup costs well under a
-    // millisecond once a cycle is built, so one lock for all channels is fine.
+    // millisecond once a cycle is built, so one lock for all channels is fine. The first lookups after a version
+    // loads are slower, because the engine first builds every cycle since the version's epoch; they hold the lock
+    // for that time (a first 7-day walk of a fixture channel took 110 to 180 ms in a test, a repeat 4 to 30 ms).
     private readonly Lock _lock = new();
     private readonly Engine _js;
     private readonly JsFunctions _fn;
@@ -27,7 +29,7 @@ public sealed class ScheduleEngine
         _js.Modules.Add("./engine.js", ReadResource("engine.js"));
         _js.Modules.Add("schedule", ReadResource("schedule.js"));
         var ns = _js.Modules.Import("schedule");
-        _fn = new JsFunctions(ns.Get("createChannel"), ns.Get("addChannelVersion"), ns.Get("segmentAt"), ns.Get("segmentsBetween"));
+        _fn = new JsFunctions(ns.Get("createChannel"), ns.Get("addChannelVersion"), ns.Get("keepVersions"), ns.Get("segmentAt"), ns.Get("segmentsBetween"), ns.Get("showsBetween"));
     }
 
     /// <summary>Registers one manifest version for a channel. Returns false if it was already registered.</summary>
@@ -40,6 +42,18 @@ public sealed class ScheduleEngine
             // Only keep a channel once a version loaded, so HasChannel never reports an empty schedule.
             _channels[channelId] = channel;
             return added;
+        }
+    }
+
+    /// <summary>Forgets a channel's versions that are not in <paramref name="versions"/> (never all of them).</summary>
+    public void KeepVersions(string channelId, IEnumerable<int> versions)
+    {
+        lock (_lock)
+        {
+            if (_channels.TryGetValue(channelId, out var channel))
+            {
+                _js.Invoke(_fn.KeepVersions, channel, JsonSerializer.Serialize(versions));
+            }
         }
     }
 
@@ -59,6 +73,18 @@ public sealed class ScheduleEngine
     /// <summary>Every segment from the one playing at <paramref name="fromMs"/> until <paramref name="toMs"/>.</summary>
     public IReadOnlyList<Segment> SegmentsBetween(string channelId, long fromMs, long toMs, string audioBase)
         => JsonSerializer.Deserialize<List<Segment>>(SegmentsBetweenJson(channelId, fromMs, toMs, audioBase), Json)!;
+
+    /// <summary>
+    /// The films only, from the last one starting at or before <paramref name="fromMs"/> to the first one starting at or
+    /// after <paramref name="toMs"/>.
+    /// </summary>
+    public IReadOnlyList<Segment> ShowsBetween(string channelId, long fromMs, long toMs, string audioBase)
+    {
+        lock (_lock)
+        {
+            return JsonSerializer.Deserialize<List<Segment>>(_js.Invoke(_fn.ShowsBetween, Channel(channelId), fromMs, toMs, audioBase).AsString(), Json)!;
+        }
+    }
 
     internal string SegmentAtJson(string channelId, long atMs, string audioBase)
     {
@@ -87,5 +113,5 @@ public sealed class ScheduleEngine
         return reader.ReadToEnd();
     }
 
-    private sealed record JsFunctions(JsValue CreateChannel, JsValue AddVersion, JsValue SegmentAt, JsValue SegmentsBetween);
+    private sealed record JsFunctions(JsValue CreateChannel, JsValue AddVersion, JsValue KeepVersions, JsValue SegmentAt, JsValue SegmentsBetween, JsValue ShowsBetween);
 }

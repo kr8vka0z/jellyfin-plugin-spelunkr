@@ -16,7 +16,7 @@ namespace Jellyfin.Plugin.Spelunkr.Stream;
 /// <summary>A live Spelunkr channel rendered by ffmpeg.</summary>
 internal sealed class ChannelStream : ILiveStream
 {
-    // A job whose output stops for this long is killed and replaced by the next fallback.
+    // A job whose output stops for this long is killed; SegmentPlayer then resumes it or moves to the next fallback.
     private static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(45);
 
     // The same, for a job that hasn't written anything yet.

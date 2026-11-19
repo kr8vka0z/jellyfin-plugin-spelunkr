@@ -5,6 +5,7 @@ using Jellyfin.Plugin.Spelunkr.Schedule;
 using Jellyfin.Plugin.Spelunkr.Stream;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using static Jellyfin.Plugin.Spelunkr.Tests.TestKit;
 
 namespace Jellyfin.Plugin.Spelunkr.Tests;
 
@@ -12,8 +13,6 @@ public class SegmentPlaybackTests
 {
     private static readonly ChannelLook Look = new("GUMSHOE", "#E8DFC8");
     private static readonly Segment Film = new() { Kind = "show", Url = "https://archive.org/download/x/x.mp4", Title = "X" };
-
-    private static string Arg(FfmpegJob job, string flag) => job.Args[job.Args.ToList().IndexOf(flag) + 1];
 
     [Fact]
     public async Task Film_that_dies_part_way_is_finished_by_the_next_fallback_from_where_it_stopped()
@@ -55,6 +54,96 @@ public class SegmentPlaybackTests
         Assert.Equal("20.000", Arg(ran[1], "-output_ts_offset"));
     }
 
+    [Theory]
+    [InlineData(40_000, true)] // played 30 s, then the download dropped: the same film resumes
+    [InlineData(11_000, false)] // died after 1 s and was padded 10 s: no real progress, so the next fallback
+    public async Task A_film_that_played_and_then_stopped_is_resumed_not_replaced(long firstMs, bool resumed)
+    {
+        var ran = new List<FfmpegJob>();
+        var emitted = await SegmentPlayer.PlayAsync(Film, Look, 1_000, 600_000, 100, (job, _) =>
+        {
+            ran.Add(job);
+            return Task.FromResult(ran.Count == 1 ? firstMs : AskedMs(job));
+        }, NullLogger.Instance, CancellationToken.None);
+
+        Assert.Equal(2, ran.Count);
+        Assert.Equal(resumed, !ran[1].StandIn);
+        // Either way the next job picks up where the first one stopped, in the file and in the stream.
+        Assert.Equal((1_000 + firstMs) / 1000.0, double.Parse(Arg(ran[1], "-ss"), CultureInfo.InvariantCulture));
+        Assert.Equal(100 + (firstMs / 1000.0), double.Parse(Arg(ran[1], "-output_ts_offset"), CultureInfo.InvariantCulture));
+        // A stand-in runs a minute and hands back, so the real film is tried again soon.
+        Assert.Equal(resumed ? 600_000 : firstMs + SegmentPlayer.StandInMs, emitted);
+    }
+
+    [Fact]
+    public async Task A_film_that_keeps_dropping_is_resumed_a_few_times_then_stands_in_for_a_minute()
+    {
+        var ran = new List<FfmpegJob>();
+        var emitted = await SegmentPlayer.PlayAsync(Film, Look, 0, 600_000, 0, (job, _) =>
+        {
+            ran.Add(job);
+            return Task.FromResult(job.StandIn ? AskedMs(job) : 30_000L);
+        }, NullLogger.Instance, CancellationToken.None);
+
+        Assert.Equal(SegmentPlayer.MaxRetries + 1, ran.Count(j => !j.StandIn));
+        Assert.Equal("60.000", Arg(ran[^1], "-t"));
+        Assert.Equal(((SegmentPlayer.MaxRetries + 1) * 30_000) + SegmentPlayer.StandInMs, emitted);
+    }
+
+    [Theory]
+    [InlineData(0, 1)] // never played: set aside
+    [InlineData(40_000, 0)] // played, then dropped and wouldn't come back: kept for next time
+    public async Task An_original_is_set_aside_only_when_it_never_played(long firstMs, int expectFailures)
+    {
+        const string original = "https://archive.org/download/x/original.mp4";
+        var urls = new List<string>();
+        var failures = 0;
+
+        await SegmentPlayer.PlayAsync(Film, Look, 0, 600_000, 0, (job, _) =>
+        {
+            urls.Add(Arg(job, "-i"));
+            return Task.FromResult(urls.Count == 1 ? firstMs : urls[^1] == original ? 0L : AskedMs(job));
+        }, NullLogger.Instance, CancellationToken.None, original, originalFailed: () => failures++);
+
+        Assert.Equal(Film.Url, urls[^1]);
+        Assert.Equal(expectFailures, failures);
+    }
+
+    [Fact]
+    public async Task A_source_down_at_the_start_gets_a_minute_of_slate_then_the_film_is_tried_again()
+    {
+        var segment = Film with { StartMs = 0, LengthMs = 600_000 };
+        var ran = new List<FfmpegJob>();
+        using var cts = new CancellationTokenSource();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => StreamPump.RunAsync(
+            0,
+            () => 0,
+            (_, _) => Task.FromResult(segment),
+            (s, offsetMs, durationMs, outputS, c) => SegmentPlayer.PlayAsync(s, Look, offsetMs, durationMs, outputS, (job, _) =>
+            {
+                ran.Add(job);
+                if (ran.Count == 4)
+                {
+                    cts.Cancel();
+                    cts.Token.ThrowIfCancellationRequested();
+                }
+
+                // The film and the film with silence fail at once (the source is down); the slate works.
+                return Task.FromResult(job.Args.Contains(Film.Url) ? 0L : AskedMs(job));
+            }, NullLogger.Instance, c),
+            (_, _, _) => Task.FromResult(0L),
+            (_, _) => Task.CompletedTask,
+            cts.Token));
+
+        Assert.Equal(4, ran.Count);
+        Assert.Equal("60.000", Arg(ran[2], "-t"));
+        Assert.DoesNotContain(Film.Url, ran[2].Args);
+        // A minute later the real film comes first again, a minute into the film and the stream.
+        Assert.Equal((Film.Url, "60.000", "60.000"), (Arg(ran[3], "-i"), Arg(ran[3], "-ss"), Arg(ran[3], "-output_ts_offset")));
+        Assert.False(ran[3].StandIn);
+    }
+
     [Fact]
     public async Task When_every_fallback_fails_it_reports_what_was_actually_emitted()
     {
@@ -80,6 +169,22 @@ public class SegmentPlaybackTests
 
         Assert.Equal(2_500, emitted);
         Assert.Equal("abc"u8.ToArray(), output.ToArray());
+    }
+
+    [Fact]
+    public async Task A_failed_job_logs_its_last_error_lines_including_ones_with_an_equals_sign()
+    {
+        using var dir = new TempDir();
+        var logger = new ListLogger();
+        var job = new FfmpegJob(["-c", "for i in $(seq 1 500); do echo \"decode error $i\" >&2; done; echo \"Failed to set value 'vaapi=va:/test/nope' for option 'init_hw_device'\" >&2; echo out_time_us=0 >&2; echo speed=1x >&2; exit 1"], new Dictionary<string, string>());
+
+        await FfmpegProcess.RunAsync("/bin/sh", job, dir.Path, System.IO.Stream.Null, () => { }, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10), logger, CancellationToken.None);
+
+        var lines = Assert.Single(logger.Messages).Split(" | ");
+        Assert.InRange(lines.Length, 2, 50);
+        Assert.Contains("vaapi=va:/test/nope", lines[^1], StringComparison.Ordinal);
+        Assert.EndsWith("decode error 500", lines[^2], StringComparison.Ordinal);
+        Assert.DoesNotContain(lines, l => l.Contains("speed=", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -132,7 +237,7 @@ public class SegmentPlaybackTests
 
         var emitted = await SegmentPlayer.PlayAsync(Film, Look, 0, 60_000, 0, (job, _) =>
         {
-            urls.Add(job.Args[job.Args.ToList().IndexOf("-i") + 1]);
+            urls.Add(Arg(job, "-i"));
             return Task.FromResult(urls.Count == 1 ? 0L : 60_000L);
         }, NullLogger.Instance, CancellationToken.None, original, Picture.Gpu("/dev/dri/renderD128"), () => failures++);
 
@@ -158,13 +263,13 @@ public class SegmentPlaybackTests
         Assert.Contains("libx264", jobs[1].Args);
         Assert.All(jobs, j => Assert.DoesNotContain(j.Args, a => a.Contains("http", StringComparison.Ordinal)));
         Assert.Contains(Film.Title!, jobs[0].TextFiles.Values.Single());
-        Assert.Equal("4.000", jobs[0].Args[jobs[0].Args.ToList().IndexOf("-t") + 1]);
+        Assert.Equal("4.000", Arg(jobs[0], "-t"));
     }
 
     [Fact]
     public void Every_remote_input_has_a_read_timeout()
     {
-        var bump = StreamPlanTests.OpenBump();
+        var bump = OpenBump();
         var jobs = FfmpegJobs.For(Film, Look, 0, 5_000, 0).Concat(FfmpegJobs.For(bump, Look, 0, 5_000, 0));
 
         foreach (var job in jobs)
@@ -180,12 +285,5 @@ public class SegmentPlaybackTests
                 }
             }
         }
-    }
-
-    private sealed class TempDir : IDisposable
-    {
-        public string Path { get; } = Directory.CreateTempSubdirectory("spelunkr-test").FullName;
-
-        public void Dispose() => Directory.Delete(Path, true);
     }
 }

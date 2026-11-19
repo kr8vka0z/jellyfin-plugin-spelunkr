@@ -17,7 +17,7 @@ public static class BumpClipVideo
     private const double HitOpacity = 0.45;
     private const double HitS = 0.22;
 
-    private const double Fps = 30;
+    private const double Fps = Picture.Fps;
 
     // A clip that plays on into the channel half's tail fades out over this long (CSS bump-clip-fade, linear).
     private const double FadeS = 0.9;
@@ -107,7 +107,7 @@ public static class BumpClipVideo
         var widen = holds.Count > 0 && clip.Look == "widen";
 
         var c = new StringBuilder();
-        c.Append(F($"[{input}:v]setpts=PTS-STARTPTS,fps=30{(widen ? string.Empty : "," + (clip.Look == "wide" ? cover : contain))}"));
+        c.Append(F($"[{input}:v]setpts=PTS-STARTPTS,fps={Fps}{(widen ? string.Empty : "," + (clip.Look == "wide" ? cover : contain))}"));
         c.Append(F($",trim=start={trimFrom:0.000}:end={trimTo:0.000},setpts=PTS-STARTPTS,tpad=start_duration={waitS:0.000}:start_mode=clone:stop=-1:stop_mode=clone"));
         if (widen)
         {
@@ -119,7 +119,7 @@ public static class BumpClipVideo
         {
             // A step's zoom keeps the zoomAt point still (CSS transform-origin): the visible part starts at o(1 - 1/z).
             var z = holds.Aggregate("1", (rest, h) => F($"if({Between("it", h.From, h.To)},{Zoom(h.Step):0.00},{rest})"));
-            c.Append(F($",zoompan=z='{z}':x='iw*{ox:0.000}*(1-1/zoom)':y='ih*{oy:0.000}*(1-1/zoom)':d=1:s={width}x{height}:fps=30,format=rgb24"));
+            c.Append(F($",zoompan=z='{z}':x='iw*{ox:0.000}*(1-1/zoom)':y='ih*{oy:0.000}*(1-1/zoom)':d=1:s={width}x{height}:fps={Fps},format=rgb24"));
         }
 
         if (holds.Count > 0 && clip.Look is "duotone" or "duozoom")
