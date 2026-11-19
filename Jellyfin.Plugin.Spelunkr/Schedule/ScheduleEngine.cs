@@ -45,16 +45,15 @@ public sealed class ScheduleEngine
         }
     }
 
-    /// <summary>
-    /// Forgets a channel's versions that are not in <paramref name="versions"/> (never all of them). Returns how many went.
-    /// </summary>
-    public int KeepVersions(string channelId, IEnumerable<int> versions)
+    /// <summary>Forgets a channel's versions that are not in <paramref name="versions"/> (never all of them).</summary>
+    public void KeepVersions(string channelId, IEnumerable<int> versions)
     {
         lock (_lock)
         {
-            return _channels.TryGetValue(channelId, out var channel)
-                ? (int)_js.Invoke(_fn.KeepVersions, channel, JsonSerializer.Serialize(versions)).AsNumber()
-                : 0;
+            if (_channels.TryGetValue(channelId, out var channel))
+            {
+                _js.Invoke(_fn.KeepVersions, channel, JsonSerializer.Serialize(versions));
+            }
         }
     }
 

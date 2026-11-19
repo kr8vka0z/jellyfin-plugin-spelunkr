@@ -21,15 +21,12 @@ export function addChannelVersion(channel, manifestJson, platformJson, pointerJs
 /**
  * Drops every version not in keepJson (a JSON array of version numbers), as the site forgets a version once the
  * lineup stops listing it. The registry is a plain object, so engine.js needs no change. Each version keeps its own
- * carry state, so the versions that stay schedule exactly as before. Never empties a channel. Returns how many went.
+ * carry state, so the versions that stay schedule exactly as before. Never empties a channel.
  */
 export function keepVersions(channel, keepJson) {
   const keep = JSON.parse(keepJson);
   const kept = channel.versions.filter((v) => keep.includes(v.v));
-  if (kept.length === 0) return 0;
-  const dropped = channel.versions.length - kept.length;
-  channel.versions = kept;
-  return dropped;
+  if (kept.length > 0) channel.versions = kept;
 }
 
 const slides = (b) => b.slides.map((s) => ({ text: s.text, ms: slideMs(s.text) }));

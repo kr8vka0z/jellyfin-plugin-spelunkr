@@ -331,11 +331,6 @@ public sealed partial class SpelunkrSource
     /// <remarks>ponytail: a channel dropped from the lineup altogether keeps its versions until a restart.</remarks>
     private void ForgetUnlisted(LineupChannel channel)
     {
-        if (channel.Versions.Count == 0)
-        {
-            return;
-        }
-
         var manifests = channel.Versions.Select(p => BucketPath(p.GetProperty("manifest").GetString())).ToHashSet(StringComparer.Ordinal);
         var versions = channel.Versions.Select(p => p.GetProperty("v").GetInt32()).ToHashSet();
         _engine.KeepVersions(channel.Id, versions);
