@@ -56,6 +56,25 @@ public class ScheduleEngineTests
         }
     }
 
+    [Theory]
+    [InlineData("gumshoe")]
+    [InlineData("homeroom")]
+    public void Shows_between_gives_only_the_films_described_as_the_full_walk_describes_them(string channelId)
+    {
+        // The guide asks for films only. They must be the same films, described the same way, as in the full walk,
+        // from the film before the window to the first film after it.
+        const long from = 1_793_217_600_000, to = from + (24 * 3_600_000L), margin = 6 * 3_600_000L;
+        var engine = Engine(channelId);
+        var films = engine.SegmentsBetween(channelId, from - margin, to + margin, AudioBase).Where(s => s.Kind == SegmentKind.Show).ToList();
+        var first = films.Last(s => s.StartMs <= from);
+        var last = films.First(s => s.StartMs >= to);
+        var expected = films.Where(s => s.StartMs >= first.StartMs && s.StartMs <= last.StartMs);
+
+        var shows = engine.ShowsBetween(channelId, from, to, AudioBase);
+
+        Assert.Equal(expected.Select(s => JsonSerializer.Serialize(s)), shows.Select(s => JsonSerializer.Serialize(s)));
+    }
+
     [Fact]
     public void Now_matches_oracle_at_every_fixture_time()
     {

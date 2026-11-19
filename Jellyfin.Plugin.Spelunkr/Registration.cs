@@ -24,14 +24,18 @@ public sealed class Registration : IHostedService
     private readonly ITunerHostManager _tunerHostManager;
     private readonly IConfigurationManager _config;
     private readonly ITaskManager _taskManager;
+    private readonly SpelunkrSource _source;
     private readonly ILogger<Registration> _logger;
+    private readonly CancellationTokenSource _stop = new();
+    private Task _refreshTimer = Task.CompletedTask;
 
     /// <summary>Initializes a new instance of the <see cref="Registration"/> class.</summary>
-    public Registration(ITunerHostManager tunerHostManager, IConfigurationManager config, ITaskManager taskManager, ILogger<Registration> logger)
+    public Registration(ITunerHostManager tunerHostManager, IConfigurationManager config, ITaskManager taskManager, SpelunkrSource source, ILogger<Registration> logger)
     {
         _tunerHostManager = tunerHostManager;
         _config = config;
         _taskManager = taskManager;
+        _source = source;
         _logger = logger;
     }
 
@@ -84,6 +88,11 @@ public sealed class Registration : IHostedService
             // Never take Jellyfin's startup down with us.
             _logger.LogError(ex, "Could not add Spelunkr to Live TV");
         }
+
+        // Without this the lineup is only refreshed when someone tunes in or Jellyfin's daily guide task runs, so an
+        // idle server could miss a new schedule version for a day. Off while there is no Spelunkr tuner entry, so a
+        // server that removed it downloads nothing.
+        _refreshTimer = Task.Run(() => _source.RunRefreshTimerAsync(() => FindTuner(_config) is not null, Task.Delay, _stop.Token), CancellationToken.None);
     }
 
     /// <summary>
@@ -122,7 +131,12 @@ public sealed class Registration : IHostedService
     }
 
     /// <inheritdoc />
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await _stop.CancelAsync().ConfigureAwait(false);
+        // Cancelling also cuts a download in flight, so the timer ends at once; Jellyfin's token still caps the wait.
+        await _refreshTimer.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>Asks Jellyfin to rebuild the TV guide now.</summary>
     /// <remarks>At startup scheduled tasks are registered after plugins start, so this waits up to 3 minutes for it.</remarks>

@@ -18,6 +18,20 @@ export function addChannelVersion(channel, manifestJson, platformJson, pointerJs
   return addVersion(channel, buildVersion(manifest, platformJson ? JSON.parse(platformJson) : null, JSON.parse(pointerJson)));
 }
 
+/**
+ * Drops every version not in keepJson (a JSON array of version numbers), as the site forgets a version once the
+ * lineup stops listing it. The registry is a plain object, so engine.js needs no change. Each version keeps its own
+ * carry state, so the versions that stay schedule exactly as before. Never empties a channel. Returns how many went.
+ */
+export function keepVersions(channel, keepJson) {
+  const keep = JSON.parse(keepJson);
+  const kept = channel.versions.filter((v) => keep.includes(v.v));
+  if (kept.length === 0) return 0;
+  const dropped = channel.versions.length - kept.length;
+  channel.versions = kept;
+  return dropped;
+}
+
 const slides = (b) => b.slides.map((s) => ({ text: s.text, ms: slideMs(s.text) }));
 const ms = (s) => Math.round(s * 1000);
 
@@ -92,6 +106,29 @@ export function segmentsBetween(channel, fromMs, toMs, audioBase) {
   for (const q of walk(channel, fromMs)) {
     if (q.startMs >= toMs) break;
     out.push(describe(channel, q, audioBase));
+  }
+  return JSON.stringify(out);
+}
+
+/**
+ * The films only, from the last one starting at or before fromMs to the first one starting at or after toMs, so a
+ * guide window that opens or closes in a break keeps its edge films whole. The guide lists films only, and
+ * describing every bump, ad and card was most of its work.
+ * ponytail: gives up after 50 non-film segments in a row at either edge (a partial edge, never an endless walk).
+ */
+export function showsBetween(channel, fromMs, toMs, audioBase) {
+  const out = [];
+  let q = lookup(channel, fromMs);
+  if (q.item.type !== "video") {
+    for (let i = 0; i < 50 && q.item.type !== "video"; i++) q = lookup(channel, q.startMs - 1);
+    if (q.item.type === "video") out.push(describe(channel, q, audioBase));
+  }
+  let after = 0;
+  for (const s of walk(channel, fromMs)) {
+    if (s.item.type === "video") {
+      out.push(describe(channel, s, audioBase));
+      if (s.startMs >= toMs) break;
+    } else if (s.startMs >= toMs && ++after >= 50) break;
   }
   return JSON.stringify(out);
 }
