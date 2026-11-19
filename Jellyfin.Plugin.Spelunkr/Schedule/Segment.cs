@@ -1,6 +1,22 @@
 // Segment: one stretch of a channel's schedule as described by schedule.js (a film, an ad, or a bump).
 namespace Jellyfin.Plugin.Spelunkr.Schedule;
 
+/// <summary>The <see cref="Segment.Kind"/> values schedule.js writes, so a typo fails to compile.</summary>
+public static class SegmentKind
+{
+    /// <summary>A film.</summary>
+    public const string Show = "show";
+
+    /// <summary>A vintage ad.</summary>
+    public const string Ad = "ad";
+
+    /// <summary>Text slides over music.</summary>
+    public const string Bump = "bump";
+
+    /// <summary>A card naming the next film in a block.</summary>
+    public const string UpNext = "up-next";
+}
+
 /// <summary>What plays on a channel from <see cref="StartMs"/> for <see cref="LengthMs"/> (Unix ms).</summary>
 public sealed record Segment
 {
@@ -22,7 +38,7 @@ public sealed record Segment
     /// <summary>Gets the position inside the cycle.</summary>
     public int Index { get; init; }
 
-    /// <summary>Gets "show", "ad", "bump" or "up-next" (anything else is a kind this plugin shows as a slate).</summary>
+    /// <summary>Gets one of the <see cref="SegmentKind"/> values (anything else is a kind this plugin shows as a slate).</summary>
     public string Kind { get; init; } = string.Empty;
 
     /// <summary>Gets the archive.org item id (shows), slice id (ads) or bump ids.</summary>
