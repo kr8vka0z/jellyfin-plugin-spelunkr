@@ -68,7 +68,7 @@ public sealed class SpelunkrTunerHost : ITunerHost
         }
 
         var channels = await _source.GetChannelsAsync(cancellationToken).ConfigureAwait(false);
-        var logos = Path.Combine(_config.CommonApplicationPaths.CachePath, "spelunkr-logos");
+        var logos = LogosDir(_config);
         return channels.Select(c =>
         {
             var info = ToChannelInfo(c, tuner.Id);
@@ -131,8 +131,14 @@ public sealed class SpelunkrTunerHost : ITunerHost
     internal static string CabinetsDir(IConfigurationManager config) => Path.Combine(config.CommonApplicationPaths.DataPath, "spelunkr-cabinets");
 
     /// <summary>
+    /// Where channel logos are kept. In the data folder for the same reason as <see cref="CabinetsDir"/>: Jellyfin
+    /// keeps a channel's logo as a path to this file, and the cache cleaner would delete it after a month.
+    /// </summary>
+    internal static string LogosDir(IConfigurationManager config) => Path.Combine(config.CommonApplicationPaths.DataPath, "spelunkr-logos");
+
+    /// <summary>
     /// The channel's logo as a PNG file Jellyfin reads directly, drawn on first use. The name carries a hash of
-    /// the logo, so a redrawn logo gets a new file. Re-drawn whenever missing (the cache folder can be emptied).
+    /// the logo, so a redrawn logo gets a new file. Re-drawn whenever missing (say, the folder was cleared by hand).
     /// The file name is the hash alone: the channel id comes from Spelunkr's data and never goes into a path.
     /// </summary>
     internal static string? LogoFile(string dir, LineupChannel c, ILogger logger)

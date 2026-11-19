@@ -15,17 +15,25 @@ continuous TV stream.
   hand-written wrapper. `ScheduleEngine` runs both in [Jint](https://github.com/sebastienros/jint), a JavaScript
   interpreter for .NET, with JSON passed in and out.
 - **SpelunkrSource** (`SpelunkrSource.cs`): downloads `lineup.json`, each channel's manifests and the network-wide
-  platform file from Spelunkr's public storage, refreshes the lineup hourly, and registers every listed version
-  with the engine, plus each version's details file (film descriptions). Offers every lineup channel with a
-  number that isn't coming-soon, debug-only or audio-overlay (`IsOffered`); a channel whose files fail to load is
-  left out without affecting the others.
+  platform file from Spelunkr's public storage, and registers every listed version with the engine, plus each
+  version's details file (film descriptions). Offers every lineup channel with a number that isn't coming-soon,
+  debug-only or audio-overlay (`IsOffered`). The lineup is read channel by channel, so a malformed channel is
+  skipped, and a channel whose files fail to load is left out without affecting the others. Each download has a
+  15 s limit. Its refresh timer, run by Registration, checks the lineup every 10 minutes, or 5 after a channel
+  failed to load; film descriptions that failed are fetched again at the next check, whichever it is. An unchanged
+  lineup costs one small download.
+  After a refresh, versions the lineup no longer lists are forgotten (engine, manifests, details, platform files),
+  except on a channel that failed to load. `audioBase` must be an `https://` address or the lineup is refused.
 - **Tuner** (`SpelunkrTunerHost.cs`): Jellyfin's Live TV asks it for channels and streams.
 - **Guide** (`Guide/`): a Live TV guide source that computes programmes from the schedule. One entry per film,
-  from its start to the next film's start.
+  from its start to the next film's start (never overlapping the one before). It asks the engine for films only
+  (`showsBetween` in `schedule.js`).
 - **Channel logos** (`Guide/ChannelLogo.cs`): draws each channel's pixel-art logomark as a PNG with the site's
   palette rules (ported, pinned by a test to colors from the site's own code). Written once into
-  `<cache>/spelunkr-logos` and handed to Jellyfin as the channel's image file.
-- **Registration** (`Registration.cs`): on startup adds a Spelunkr tuner entry and guide entry to Live TV settings.
+  `<data>/spelunkr-logos` (not the cache folder, which Jellyfin empties of month-old files) and handed to Jellyfin
+  as the channel's image file.
+- **Registration** (`Registration.cs`): on startup adds a Spelunkr tuner entry and guide entry to Live TV settings,
+  and runs SpelunkrSource's refresh timer while the tuner entry exists.
 - **Stream** (`Stream/`): `ChannelStream` runs one ffmpeg per schedule segment and appends the output to a file
   Jellyfin serves to its players. `FfmpegJobs` builds the commands, `StreamPump` walks the schedule, `SegmentPlayer` walks the fallbacks,
   `FfmpegProcess` runs one job and measures what it wrote, `BumpCards` times the bump text, `Pacing` keeps the
@@ -44,8 +52,9 @@ continuous TV stream.
    tuner if the tuner was recreated), then queues a guide refresh on every start, since Spelunkr may have published
    a new schedule version while Jellyfin was off. If "Open Live TV on the guide" is on, LiveTvLanding fills in the Guide for
    accounts with no Live TV default screen. The refresh calls the guide source, which asks SpelunkrSource for
-   the next days of segments, reaching past the window's edges so the first and last films are whole. While
-   running, a newly published version triggers another refresh.
+   the next days of films, reaching past the window's edges so the first and last films are whole. While
+   running, the refresh timer picks up a newly published version within 10 minutes and queues another guide
+   refresh, as it does when film descriptions that failed to download arrive.
 2. Tune in: Jellyfin calls the tuner, which picks the stream's format from Jellyfin's encoding settings and opens
    a `ChannelStream`. It asks what is on now, asks archive.org's metadata API for a better original of that file
    (2.5 s at most, cached), starts ffmpeg at that point in the file. Opening returns once the first bytes are written, which are the tuning-in card's, ahead of both of those steps. Jellyfin then serves
@@ -132,8 +141,10 @@ All of it runs from `.github/workflows/release.yml` and `test-build.yml`; `AGENT
   API. Adding them means building that music track in ffmpeg.
 - "Up next" cards (channels with `block`) are drawn as one still card over their sting; the site animates the
   words onto the music's beats.
-- With all channels the first guide refresh takes a few minutes (the schedule runs in a JavaScript interpreter
-  for 7 days x 30 channels).
+- The JavaScript engine is not what makes a first guide refresh slow. In a test on two fixture channels, the
+  engine's first 7-day walk on a freshly loaded schedule took 110 to 180 ms (it builds every cycle since the
+  version's start) and a repeat 4 to 30 ms. Over 30 channels that is seconds; if a whole refresh takes minutes,
+  look at the downloads (first start) and Jellyfin's own side first.
 
 - Without the platform file named in a manifest, the engine silently drops all bumps and ads and the timing is
   wrong. `schedule.js` refuses to load a manifest without it.
