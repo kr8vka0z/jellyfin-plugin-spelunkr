@@ -1,6 +1,6 @@
 // FfmpegJobs: turns one schedule segment into the ffmpeg command lines that render it as MPEG-TS on stdout.
 // Every job outputs the same fixed format, because archive files differ and a player breaks if the stream's
-// resolution or codec changes mid-way. The runner tries the jobs in order until one produces output.
+// resolution or codec changes mid-way. SegmentPlayer runs the jobs, best first, until the segment's length is filled.
 using System.Globalization;
 using Jellyfin.Plugin.Spelunkr.Schedule;
 
@@ -107,9 +107,9 @@ public static class FfmpegJobs
 
     /// <summary>
     /// The jobs for <paramref name="segment"/>, best first: the real thing, then the real thing with silence
-    /// (missing or broken audio), then a plain slate naming what should be on, so the stream never stops.
-    /// A GPU stream runs that whole list on the GPU, then all of it again on the CPU at the same size, so a GPU
-    /// that fails only costs the picture's sharpness, never the channel.
+    /// (missing or broken audio), then a plain slate naming what should be on, so the stream never stops. The last two
+    /// are stand-ins (<see cref="FfmpegJob.StandIn"/>). On a GPU stream each job is followed at once by its CPU twin at
+    /// the same size, so a GPU that fails only costs the picture's sharpness, never the channel.
     /// </summary>
     /// <param name="segment">What is on.</param>
     /// <param name="look">The channel's name and color.</param>
