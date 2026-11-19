@@ -225,7 +225,7 @@ public class BumpClipTests
 
     [Theory]
     [InlineData("centre", null, "fontcolor=0xFFFFFF:fontsize=30:line_spacing=8:text_align=C:x=(w-tw)/2:y=(h-th)/2:")]
-    [InlineData("lower", null, "fontcolor=0xFFFFFF:fontsize=30:line_spacing=8:text_align=C:x=(w-tw)/2:y=h-th-89:")]
+    [InlineData("lower", null, "fontcolor=0xFFFFFF:fontsize=30:line_spacing=8:text_align=C:x=(w-tw)/2:y=h-th-94:")]
     [InlineData("centre", "stroke", "fontcolor=0xFFFFFF:borderw=3:bordercolor=0x000000:fontsize=30:")]
     [InlineData(null, "stroke", "fontcolor=0xE8DFC8:fontsize=48:")] // the engine drops an edge without a position
     public void Words_over_the_clip_take_the_sites_caption_position_and_edge(string? wordsAt, string? wordsEdge, string drawn)

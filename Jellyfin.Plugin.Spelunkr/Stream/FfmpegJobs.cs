@@ -360,9 +360,10 @@ public static class FfmpegJobs
             // can't safely carry arbitrary slide text (quotes, colons, percent signs).
             var name = string.Create(CultureInfo.InvariantCulture, $"t{files.Count}.txt");
             // A clip's captions (wordsAt) are the site's 26.81 px words against its usual 42.9 px: 5/8 the size, so more
-            // fit on a line. "lower" sits them above the site's bottom padding, 7% of the width.
+            // fit on a line. "lower" sits them above the site's bottom padding, 7% of the width, and the half line-height
+            // under the words (CSS line-height 1.35).
             var (size, gap, chars) = card.WordsAt is null ? (fontSize, lineSpacing, wrap) : (fontSize * 5 / 8, lineSpacing * 5 / 8, wrap * 8 / 5);
-            var y = card.WordsAt == "lower" ? $"h-th-{(p.Cabinet is null ? p.Width : p.TubeWidth) * 7 / 100}" : "(h-th)/2";
+            var y = card.WordsAt == "lower" ? $"h-th-{((p.Cabinet is null ? p.Width : p.TubeWidth) * 7 / 100) + (size * 7 / 40)}" : "(h-th)/2";
             files[name] = Wrap(card.Text, chars);
             parts.Add(string.Create(
                 CultureInfo.InvariantCulture,
