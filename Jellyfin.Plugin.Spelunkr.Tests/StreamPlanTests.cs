@@ -128,6 +128,22 @@ public class StreamPlanTests
     }
 
     [Theory]
+    [InlineData("#E8DFC8", "0xE8DFC8")]
+    [InlineData("#fff", "0x666666")] // ffmpeg reads 0xfff as another color, or not at all
+    [InlineData("#12345 ", "0x666666")] // whitespace that a hex number parse lets through
+    [InlineData("red", "0x666666")]
+    [InlineData("#E8DFC8:s=1x1", "0x666666")] // would rewrite the filter string
+    [InlineData(null, "0x666666")]
+    public void An_odd_channel_color_becomes_grey_so_the_channel_still_opens(string? color, string expected)
+    {
+        var look = new ChannelLook("X", color);
+
+        var jobs = FfmpegJobs.TuningIn(new Segment { Kind = "show", Title = "X" }, look, 4_000).Concat(FfmpegJobs.For(OpenBump(), look, 0, 5_000, 0));
+
+        Assert.All(jobs, j => Assert.Contains($"color=c={expected}:", Inputs(j.Args).First(i => i.StartsWith("color=", StringComparison.Ordinal)), StringComparison.Ordinal));
+    }
+
+    [Theory]
     [InlineData(100_000, 100_000, 100_000, 0)] // on time: go straight on
     [InlineData(80_000, 100_000, 100_000, 0)] // 20 s behind (slow network): skip ahead to now
     [InlineData(95_000, 100_000, 95_000, 0)] // 5 s behind: fine, keep the content continuous

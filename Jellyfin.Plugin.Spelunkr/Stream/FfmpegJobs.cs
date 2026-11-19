@@ -8,8 +8,15 @@ namespace Jellyfin.Plugin.Spelunkr.Stream;
 
 /// <summary>A channel's name and color, used for bump and fallback slates.</summary>
 /// <param name="Name">Channel name as shown on screen.</param>
-/// <param name="Color">Background color, "#RRGGBB".</param>
-public sealed record ChannelLook(string Name, string Color);
+/// <param name="Color">Background color from the lineup, "#RRGGBB".</param>
+public sealed record ChannelLook(string Name, string? Color)
+{
+    /// <summary>
+    /// Gets the background color, always "#RRGGBB". Anything else in the lineup becomes the grey the channel logo also
+    /// falls back to: the color goes into ffmpeg's filter strings, where an odd value would stop the channel opening.
+    /// </summary>
+    public string Color { get; } = Color is { Length: 7 } && Color[0] == '#' && !Color.AsSpan(1).ContainsAnyExcept("0123456789abcdefABCDEF") ? Color : "#666666";
+}
 
 /// <summary>One ffmpeg run: its arguments and the text files (name to content) it reads from its working folder.</summary>
 /// <param name="Args">The command line.</param>
