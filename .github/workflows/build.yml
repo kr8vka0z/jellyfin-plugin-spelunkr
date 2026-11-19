@@ -1,4 +1,6 @@
 # build.yml: build the plugin and run its tests on every pull request and every push to main or dev.
+# On a push to dev the .NET tests run in test-build.yml instead (its build action tests before it publishes), so
+# each push runs them once.
 name: Build
 
 on:
@@ -9,17 +11,29 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash # -eo pipefail: a failure anywhere in a pipe stops the step
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      DOTNET: ${{ !(github.event_name == 'push' && github.ref_name == 'dev') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: env.DOTNET == 'true'
         with:
           global-json-file: global.json
-      - run: dotnet build -c Release
-      - run: dotnet test -c Release --no-build
+      # Some tests run the real ffmpeg.
+      - if: env.DOTNET == 'true'
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
+      - if: env.DOTNET == 'true'
+        run: dotnet build -c Release
+      - if: env.DOTNET == 'true'
+        run: dotnet test -c Release --no-build
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - run: bun test tools/oracle tools/release tools/extract-engine
+      - run: bun test tools
       - name: Keep test builds out of the public feed
         run: bun tools/release/feed.ts check "${GITHUB_BASE_REF:-$GITHUB_REF_NAME}"

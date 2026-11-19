@@ -18,26 +18,40 @@ permissions:
   contents: read
   issues: write
 
+defaults:
+  run:
+    shell: bash # -eo pipefail: a failure anywhere in a pipe stops the step
+
 jobs:
   branches:
     runs-on: ubuntu-latest
     outputs:
       list: ${{ steps.list.outputs.list }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: list
         env:
           GH_TOKEN: ${{ github.token }}
         # dev may not exist. Checking it blindly would report a missing branch as a Spelunkr break.
+        # dev is checked only when what the check runs differs from main's, or a second run would repeat the first
+        # against spelunkr.tv and post the same report twice. If the two can't be compared, dev is checked.
         run: |
-          if gh api "repos/$GITHUB_REPOSITORY/branches/dev" >/dev/null; then
-            echo 'list=["main","dev"]' >> "$GITHUB_OUTPUT"
-          else
+          if ! gh api "repos/$GITHUB_REPOSITORY/branches/dev" >/dev/null; then
             echo 'list=["main"]' >> "$GITHUB_OUTPUT"
+          elif git fetch --depth 1 origin main dev \
+              && git diff --quiet origin/main origin/dev -- Jellyfin.Plugin.Spelunkr/Schedule tools/check tools/oracle tools/extract-engine; then
+            echo "dev runs the same schedule code and check tools as main: checking main only."
+            echo 'list=["main"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'list=["main","dev"]' >> "$GITHUB_OUTPUT"
           fi
 
   check:
     needs: branches
     runs-on: ubuntu-latest
+    # Above the worst case, so a slow run still ends in a report: 30 channels 5 at a time, each up to 5 minutes, then
+    # every failure again alone (about 3 hours if all fail). A job that runs out of time files no issue.
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       max-parallel: 1 # one at a time, so two failures share one issue
@@ -55,12 +69,15 @@ jobs:
           bunx playwright install --with-deps chromium
 
       - name: Check
+        id: check
         env:
           SIMULATE: ${{ inputs.simulate_break && '--simulate-break' || '' }}
-        run: bun tools/check/check.ts --report report.md $SIMULATE
+        run: bun tools/check/check.ts --report report.md ${SIMULATE:+"$SIMULATE"}
 
+      # Only when the check itself failed: a failed checkout or install says nothing about Spelunkr, and this label
+      # starts the unattended fix lane. Those failures just turn the run red.
       - name: Open or update the broken-by-spelunkr issue
-        if: failure()
+        if: failure() && steps.check.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ matrix.branch }}
