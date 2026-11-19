@@ -196,7 +196,9 @@ if (!flag("--skip-live")) {
         }
       });
   try {
-    results.push(...(await runLive([...channelIds].sort(), LIVE_AT_ONCE, liveCheck)));
+    // A minute's wait before the retries: spelunkr.tv's own player sometimes falls 10-40 s behind while a film loads,
+    // and an immediate retry caught the same lag (false alarms #31, #50, #53, each passed when rerun minutes later).
+    results.push(...(await runLive([...channelIds].sort(), LIVE_AT_ONCE, liveCheck, () => Bun.sleep(60_000))));
   } finally {
     await browser.close();
   }
