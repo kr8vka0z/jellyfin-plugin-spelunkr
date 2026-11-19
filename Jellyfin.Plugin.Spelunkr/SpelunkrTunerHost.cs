@@ -220,11 +220,11 @@ public sealed class SpelunkrTunerHost : ITunerHost
         [
             new MediaStream
             {
-                Type = MediaStreamType.Video, Index = 0, Codec = "h264", Profile = "High", Level = 41, PixelFormat = "yuv420p",
-                Width = picture.Width, Height = picture.Height, AverageFrameRate = 30, RealFrameRate = 30, AspectRatio = "16:9",
+                Type = MediaStreamType.Video, Index = 0, Codec = "h264", Profile = Picture.Profile, Level = Picture.Level, PixelFormat = "yuv420p",
+                Width = picture.Width, Height = picture.Height, AverageFrameRate = Picture.Fps, RealFrameRate = Picture.Fps, AspectRatio = "16:9",
                 BitRate = picture.MaxRateK * 1000, IsInterlaced = false,
             },
-            new MediaStream { Type = MediaStreamType.Audio, Index = 1, Codec = "aac", Channels = 2, ChannelLayout = "stereo", SampleRate = 48000, BitRate = 128_000 },
+            new MediaStream { Type = MediaStreamType.Audio, Index = 1, Codec = "aac", Channels = 2, ChannelLayout = "stereo", SampleRate = Picture.AudioRate, BitRate = Picture.AudioKbps * 1000 },
         ],
         SupportsProbing = false,
         AnalyzeDurationMs = 3000,

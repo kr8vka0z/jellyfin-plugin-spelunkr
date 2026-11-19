@@ -54,6 +54,27 @@ public sealed record Picture(int Width, int Height, int MaxRateK, string? VaapiD
     /// <summary>Gets the tube's height.</summary>
     public int TubeHeight => Height * 972 / 1080;
 
+    // The rest of the stream's one format, the same on every job, and declared to Jellyfin as it is (see
+    // SpelunkrTunerHost.NewMediaSource): Jellyfin doesn't probe the stream, so a value changed here is changed there too.
+
+    /// <summary>Frames per second.</summary>
+    public const int Fps = 30;
+
+    /// <summary>Seconds between keyframes.</summary>
+    public const int KeyframeS = 2;
+
+    /// <summary>The H.264 profile, as Jellyfin names it; ffmpeg takes it in lower case.</summary>
+    public const string Profile = "High";
+
+    /// <summary>The H.264 level times ten, as Jellyfin stores it (41 is level 4.1).</summary>
+    public const int Level = 41;
+
+    /// <summary>Audio sample rate, Hz.</summary>
+    public const int AudioRate = 48_000;
+
+    /// <summary>Audio bitrate, kbit/s.</summary>
+    public const int AudioKbps = 128;
+
     // 5000k at 720p: the cap only bites on busy, grainy scenes, which is where old film looked blocky at the old
     // 3000k, while staying an easy stream for any home network or player. 8000k is the same per-pixel budget at 1080p.
 
@@ -81,8 +102,8 @@ public static class FfmpegJobs
     internal const int ShortfallPadS = 10;
     private static readonly string PadVideo = string.Create(CultureInfo.InvariantCulture, $",tpad=stop_mode=clone:stop_duration={ShortfallPadS}");
     private static readonly string PadAudio = string.Create(CultureInfo.InvariantCulture, $",apad=pad_dur={ShortfallPadS}");
-    private const string Audio = "aresample=48000,aformat=channel_layouts=stereo";
-    private const string Silence = "anullsrc=r=48000:cl=stereo";
+    private static readonly string Audio = string.Create(CultureInfo.InvariantCulture, $"aresample={Picture.AudioRate},aformat=channel_layouts=stereo");
+    private static readonly string Silence = string.Create(CultureInfo.InvariantCulture, $"anullsrc=r={Picture.AudioRate}:cl=stereo");
 
     /// <summary>
     /// The jobs for <paramref name="segment"/>, best first: the real thing, then the real thing with silence
@@ -240,7 +261,7 @@ public static class FfmpegJobs
     private static string[] Remote => ["-rw_timeout", "15000000", "-reconnect", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5"];
 
     private static string[] Color(ChannelLook look, Picture p) =>
-        [.. Paced, "-f", "lavfi", "-i", string.Create(CultureInfo.InvariantCulture, $"color=c=0x{look.Color.TrimStart('#')}:s={(p.Cabinet is null ? p.Width : p.TubeWidth)}x{(p.Cabinet is null ? p.Height : p.TubeHeight)}:r=30")];
+        [.. Paced, "-f", "lavfi", "-i", string.Create(CultureInfo.InvariantCulture, $"color=c=0x{look.Color.TrimStart('#')}:s={(p.Cabinet is null ? p.Width : p.TubeWidth)}x{(p.Cabinet is null ? p.Height : p.TubeHeight)}:r={Picture.Fps}")];
 
     // Films on the GPU: libplacebo (a Vulkan filter) upscales, so Vulkan is opened on top of the VA-API device and
     // the frames are handed back to VA-API for the encoder without leaving the GPU.
@@ -256,7 +277,7 @@ public static class FfmpegJobs
     private static string Upload(bool gpu) => gpu ? ",format=nv12,hwupload" : string.Empty;
 
     // The cabinet goes last among a job's inputs, so the film's, the music's and the silence's numbers never change.
-    private static string[] CabinetInput(Picture p) => p.Cabinet is null ? [] : ["-framerate", "30", "-i", p.Cabinet];
+    private static string[] CabinetInput(Picture p) => p.Cabinet is null ? [] : ["-framerate", Picture.Fps.ToString(CultureInfo.InvariantCulture), "-i", p.Cabinet];
 
     private static string[] FilmVideo(Picture p, bool gpu, int cabinetInput) => p.Cabinet is null
         ? ["-map", "0:v:0", "-vf", Film(p, gpu)]
@@ -276,7 +297,7 @@ public static class FfmpegJobs
     /// or a film in another color space plays with the wrong colors.
     /// </remarks>
     private static string Framed(Picture p, bool gpu, string video, int cabinetInput) => gpu
-        ? string.Create(CultureInfo.InvariantCulture, $"{video},hwupload[a];[{cabinetInput}:v]format=rgba{Window(p)},setparams=color_trc=bt709:color_primaries=bt709,hwupload,loop=-1:1:0[b];[a][b]libplacebo=inputs=2:w={p.Width}:h={p.Height}:fps=30:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12:colorspace=bt709:range=tv:color_primaries=bt709:color_trc=bt709:{Place("x", p.TubeX, 0)}:{Place("y", p.TubeY, 0)}:{Place("w", p.TubeWidth, p.Width)}:{Place("h", p.TubeHeight, p.Height)},hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1[v]")
+        ? string.Create(CultureInfo.InvariantCulture, $"{video},hwupload[a];[{cabinetInput}:v]format=rgba{Window(p)},setparams=color_trc=bt709:color_primaries=bt709,hwupload,loop=-1:1:0[b];[a][b]libplacebo=inputs=2:w={p.Width}:h={p.Height}:fps={Picture.Fps}:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12:colorspace=bt709:range=tv:color_primaries=bt709:color_trc=bt709:{Place("x", p.TubeX, 0)}:{Place("y", p.TubeY, 0)}:{Place("w", p.TubeWidth, p.Width)}:{Place("h", p.TubeHeight, p.Height)},hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1[v]")
         : string.Create(CultureInfo.InvariantCulture, $"{video},pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,scale=out_color_matrix=bt709:out_range=tv[a];[{cabinetInput}:v]{(p.Window is null ? string.Empty : "format=rgba" + Window(p) + ",")}format=yuva420p,loop=-1:1:0[b];[a][b]overlay=shortest=1,format=yuv420p,setsar=1[v]");
 
     // The now-playing window's words: label, title lines, year. The window is empty in the art; these are drawn onto
@@ -335,18 +356,18 @@ public static class FfmpegJobs
 
     // A film on the CPU, sized to the tube: scaled down to fit, never stretched, 30 fps. Framed centers it.
     private static string TubeFit(Picture p) =>
-        string.Create(CultureInfo.InvariantCulture, $"scale={p.TubeWidth}:{p.TubeHeight}:force_original_aspect_ratio=decrease,setsar=1,fps=30,format=yuv420p{PadVideo}");
+        string.Create(CultureInfo.InvariantCulture, $"scale={p.TubeWidth}:{p.TubeHeight}:force_original_aspect_ratio=decrease,setsar=1,fps={Picture.Fps},format=yuv420p{PadVideo}");
 
     /// <summary>The film's video filter: fit inside the frame with black side bars (never stretched), 30 fps.</summary>
     private static string Film(Picture p, bool gpu) => gpu
         // Then libplacebo's ewa_lanczossharp upscale with debanding (smooths the stepped gradients of the old ~1 Mbps
         // encodes). Measured ~8x real time on a home GPU.
         ? string.Create(CultureInfo.InvariantCulture, $"{Denoised},hwupload,libplacebo=w={p.Width}:h={p.Height}:fit_mode=contain:fillcolor=black:upscaler=ewa_lanczossharp:deband=true:format=nv12,hwmap=derive_device=vaapi,scale_vaapi=format=nv12,setsar=1")
-        : string.Create(CultureInfo.InvariantCulture, $"scale={p.Width}:{p.Height}:force_original_aspect_ratio=decrease,pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p{PadVideo}");
+        : string.Create(CultureInfo.InvariantCulture, $"scale={p.Width}:{p.Height}:force_original_aspect_ratio=decrease,pad={p.Width}:{p.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={Picture.Fps},format=yuv420p{PadVideo}");
 
     // A light denoise (hqdn3d, half its default strength) on the small source frame, so the sharp scaler that follows
     // doesn't sharpen film grain and compression blocks too.
-    private static string Denoised => $"hqdn3d=2:1.5:3:2.25,fps=30{PadVideo},format=yuv420p";
+    private static string Denoised => string.Create(CultureInfo.InvariantCulture, $"hqdn3d=2:1.5:3:2.25,fps={Picture.Fps}{PadVideo},format=yuv420p");
 
     // No B-frames (-bf 0): with them each job's first video timestamps start slightly before the previous job's
     // last ones, which players see as time going backwards at every join.
@@ -355,17 +376,22 @@ public static class FfmpegJobs
     // Profile, level and a keyframe every 60 frames are pinned on both encoders: a GPU stream mixes GPU jobs with
     // CPU fallbacks, and players expect those to stay the same mid-stream. (h264_vaapi makes every keyframe a fresh
     // start point, as libx264 does with these settings.)
-    private static string[] Encode(Picture p, bool gpu, long durationMs, double outputOffsetS) =>
-    [
-        .. gpu
-            ? (string[])["-c:v", "h264_vaapi", "-profile:v", "high", "-level:v", "4.1", "-rc_mode", "VBR", "-b:v", "6000k"]
-            : ["-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", "-level:v", "4.1", "-crf", "23"],
-        "-maxrate", Kbps(p.MaxRateK), "-bufsize", Kbps(p.MaxRateK * 2),
-        .. gpu ? (string[])["-g", "60", "-bf", "0"] : ["-g", "60", "-keyint_min", "60", "-sc_threshold", "0", "-bf", "0"],
-        "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000",
-        "-t", Seconds(durationMs), "-output_ts_offset", outputOffsetS.ToString("0.000", CultureInfo.InvariantCulture),
-        "-f", "mpegts", "pipe:1",
-    ];
+    private static string[] Encode(Picture p, bool gpu, long durationMs, double outputOffsetS)
+    {
+        string[] format = ["-profile:v", Picture.Profile.ToLowerInvariant(), "-level:v", string.Create(CultureInfo.InvariantCulture, $"{Picture.Level / 10}.{Picture.Level % 10}")];
+        var gop = (Picture.Fps * Picture.KeyframeS).ToString(CultureInfo.InvariantCulture);
+        return
+        [
+            .. gpu
+                ? (string[])["-c:v", "h264_vaapi", .. format, "-rc_mode", "VBR", "-b:v", "6000k"]
+                : ["-c:v", "libx264", "-preset", "veryfast", .. format, "-crf", "23"],
+            "-maxrate", Kbps(p.MaxRateK), "-bufsize", Kbps(p.MaxRateK * 2),
+            .. gpu ? (string[])["-g", gop, "-bf", "0"] : ["-g", gop, "-keyint_min", gop, "-sc_threshold", "0", "-bf", "0"],
+            "-c:a", "aac", "-b:a", Kbps(Picture.AudioKbps), "-ac", "2", "-ar", Picture.AudioRate.ToString(CultureInfo.InvariantCulture),
+            "-t", Seconds(durationMs), "-output_ts_offset", outputOffsetS.ToString("0.000", CultureInfo.InvariantCulture),
+            "-f", "mpegts", "pipe:1",
+        ];
+    }
 
     private static string Kbps(int k) => k.ToString(CultureInfo.InvariantCulture) + "k";
 
