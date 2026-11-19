@@ -1,5 +1,6 @@
 // FfmpegProcess: runs one ffmpeg job, copies its MPEG-TS output into the stream file, and reports how much
-// media it actually produced (from ffmpeg's -progress lines). Kills a job whose output stalls.
+// media it actually produced (from ffmpeg's -progress lines). Kills a job whose output stalls. Also runs the short
+// one-off programs (ffprobe, a one-frame ffmpeg) to their exit.
 using System.Diagnostics;
 using System.Globalization;
 using Microsoft.Extensions.Logging;
@@ -114,6 +115,37 @@ internal static class FfmpegProcess
         }
 
         return Interlocked.Read(ref emittedUs) / 1000;
+    }
+
+    /// <summary>
+    /// Runs a short program (an ffprobe, a one-frame ffmpeg) to its exit and returns its exit code and what it wrote to
+    /// stdout. One still running when <paramref name="ct"/> fires is killed before this throws, so nothing is left
+    /// running behind a viewer who gave up. stderr isn't read: left alone it goes to Jellyfin's own output, and an
+    /// unread redirected pipe could fill and hang a chatty program.
+    /// </summary>
+    public static async Task<(int ExitCode, string Output)> RunToExitAsync(string exe, IEnumerable<string> args, CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo(exe) { RedirectStandardOutput = true, UseShellExecute = false };
+        foreach (var arg in args)
+        {
+            psi.ArgumentList.Add(arg);
+        }
+
+        using var process = Process.Start(psi) ?? throw new IOException("could not start " + exe);
+        try
+        {
+            var output = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+            return (process.ExitCode, output);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
     }
 
     // -progress lines are key=value with lowercase keys (frame, out_time_us, speed...). Error lines can hold an '=' too,

@@ -142,17 +142,12 @@ public sealed class SpelunkrTunerHost : ITunerHost
             return null;
         }
 
-        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(c.Color + string.Concat(rows))))[..16];
-        var path = Path.Combine(dir, $"{hash}.png");
+        var path = Path.Combine(dir, StoredFile.Name(System.Text.Encoding.UTF8.GetBytes(c.Color + string.Concat(rows))) + ".png");
         try
         {
-            if (!File.Exists(path))
-            {
-                Directory.CreateDirectory(dir);
-                File.WriteAllBytes(path, Guide.ChannelLogo.RenderPng(rows, c.Color));
-            }
-
-            return path;
+            // Through a temp file: two channel lists asked for at once must not hand Jellyfin a half-written logo.
+            Directory.CreateDirectory(dir);
+            return File.Exists(path) ? path : StoredFile.Save(path, Guide.ChannelLogo.RenderPng(rows, c.Color));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

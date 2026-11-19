@@ -1,6 +1,5 @@
 // RealFfmpegTests: film jobs run through a real ffmpeg, the way a stream runs them. Every other stream test checks
 // argument text, which can't show what ffmpeg does with it. Skipped when no ffmpeg is installed.
-using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -16,11 +15,6 @@ public class RealFfmpegTests
 {
     private static readonly ChannelLook Look = new("GUMSHOE", "#E8DFC8");
 
-    // SPELUNKR_FFMPEG points the tests at another build (Jellyfin's own), otherwise the first ffmpeg on PATH.
-    private static readonly string? Ffmpeg = Environment.GetEnvironmentVariable("SPELUNKR_FFMPEG") is { Length: > 0 } set ? set
-        : (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator)
-            .Select(dir => Path.Combine(dir, "ffmpeg")).FirstOrDefault(File.Exists);
-
     [Theory]
     [InlineData(0, false)] // the film
     [InlineData(1, false)] // the film with silence, whose silence never ends on its own
@@ -31,12 +25,12 @@ public class RealFfmpegTests
         using var dir = new TempDir();
         // A 3 s film, served over HTTP like archive.org: the job's network options only apply to a URL.
         var film = Path.Combine(dir.Path, "short.mp4");
-        Assert.Equal(0, await Run(Ffmpeg!, dir.Path, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=s=320x240:r=25:d=3", "-f", "lavfi", "-i", "sine=d=3", "-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart", film));
+        Assert.Equal(0, await Run("-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=s=320x240:r=25:d=3", "-f", "lavfi", "-i", "sine=d=3", "-c:v", "libx264", "-c:a", "aac", "-movflags", "+faststart", film));
         var picture = Picture.Cpu;
         if (cabinet)
         {
             picture = picture with { Cabinet = Path.Combine(dir.Path, "cabinet.png") };
-            Assert.Equal(0, await Run(Ffmpeg!, dir.Path, "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=brown@0.5:s=1280x720,format=rgba", "-frames:v", "1", picture.Cabinet));
+            Assert.Equal(0, await Run("-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=brown@0.5:s=1280x720,format=rgba", "-frames:v", "1", picture.Cabinet));
         }
 
         using var server = new LoopbackFile(await File.ReadAllBytesAsync(film, TestContext.Current.CancellationToken));
@@ -50,18 +44,7 @@ public class RealFfmpegTests
         Assert.True(output.Length > 0);
     }
 
-    private static async Task<int> Run(string exe, string workDir, params string[] args)
-    {
-        var psi = new ProcessStartInfo(exe) { WorkingDirectory = workDir, UseShellExecute = false };
-        foreach (var arg in args)
-        {
-            psi.ArgumentList.Add(arg);
-        }
-
-        using var process = Process.Start(psi)!;
-        await process.WaitForExitAsync();
-        return process.ExitCode;
-    }
+    private static async Task<int> Run(params string[] args) => (await FfmpegProcess.RunToExitAsync(Ffmpeg!, args, TestContext.Current.CancellationToken)).ExitCode;
 
     /// <summary>Serves one file over HTTP on the loopback interface, to every request, until disposed.</summary>
     private sealed class LoopbackFile : IDisposable

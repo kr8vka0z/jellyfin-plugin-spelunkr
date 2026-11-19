@@ -19,6 +19,14 @@ internal static class TestKit
     private static readonly Lazy<Segment> OpenBumpOnce = new(() => ScheduleEngineTests.GumshoeEngine()
         .SegmentsBetween("gumshoe", 1_793_220_818_819, 1_793_220_818_820, AudioBase)[0]);
 
+    /// <summary>
+    /// A real ffmpeg for the tests that run one, or null (they skip). SPELUNKR_FFMPEG points them at another build
+    /// (Jellyfin's own), otherwise it is the first ffmpeg on PATH.
+    /// </summary>
+    public static readonly string? Ffmpeg = Environment.GetEnvironmentVariable("SPELUNKR_FFMPEG") is { Length: > 0 } set ? set
+        : (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator)
+            .Select(dir => Path.Combine(dir, "ffmpeg")).FirstOrDefault(File.Exists);
+
     public static TheoryData<string> Modes => new() { "cpu", "gpu" };
 
     /// <summary>An "open" bump straight from the oracle (Fixtures/timeline-gumshoe-1793217600000.jsonl, the segment with index 173).</summary>
