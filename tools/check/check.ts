@@ -51,6 +51,9 @@ let channelIds: string[] = [];
 const manifests = new Map<string, { pointer: any; text: string; platform: string | null }[]>();
 // Same rule as SpelunkrSource.IsOffered in the plugin.
 const offered = (c: any) => /^[a-z0-9-]+$/.test(c.id ?? "") && Number.isInteger(c.dial) && !c.comingSoon && !c.debugOnly && !c.audioOverlay;
+// Break-clip looks and word positions the plugin draws (BumpClipVideo.Looks, BumpCards). The engine turns an unknown
+// look into "flash" and drops an unknown position, so a new one would play wrong without anything failing.
+const DRAWN: Record<string, unknown[]> = { look: ["flash", "duotone", "zoom", "duozoom", "widen", "wide"], wordsAt: ["centre", "lower"], wordsEdge: ["stroke"] };
 
 await check("data", async () => {
   lineup = JSON.parse(await readText("lineup.json"));
@@ -97,6 +100,10 @@ await check("data", async () => {
         expect(`${w} items[${i}]`, it, "inS", "number", true);
       }
       for (const [i, b] of (m.bumps ?? []).entries()) expect(`${w} bumps[${i}]`, b, "slides", "array");
+      for (const b of m.bumps ?? [])
+        for (const s of Array.isArray(b?.slides) ? b.slides : [])
+          for (const [f, drawn] of Object.entries(DRAWN))
+            if (s?.clip && s[f] != null && !drawn.includes(s[f])) problems.push(`${w} bump ${b.id}: clip ${f} ${JSON.stringify(s[f])} is not one the plugin draws`);
       for (const [i, a] of (m.audio ?? []).entries()) expect(`${w} audio[${i}]`, a, "filename", "string");
       for (const [i, s] of (m.ads?.slices ?? []).entries()) {
         for (const f of ["tape", "file"] as const) expect(`${w} ads.slices[${i}]`, s, f, "string");
