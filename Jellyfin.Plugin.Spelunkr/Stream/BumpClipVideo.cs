@@ -16,7 +16,7 @@ public static class BumpClipVideo
     private const double HitOpacity = 0.45;
     private const double HitS = 0.22;
 
-    private const double Fps = 30;
+    private const double Fps = Picture.Fps;
 
     /// <summary>
     /// Where in the clip the picture is at <paramref name="atS"/> seconds into the bump: the engine's clip clock (`dv`),
@@ -91,14 +91,14 @@ public static class BumpClipVideo
             .Where(h => h.To > 0).ToList();
 
         var c = new StringBuilder();
-        c.Append(F($"[{input}:v]setpts=PTS-STARTPTS,fps=30,scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=rgb24"));
+        c.Append(F($"[{input}:v]setpts=PTS-STARTPTS,fps={Fps},scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=rgb24"));
         c.Append(F($",trim=start={trimFrom:0.000}:end={trimTo:0.000},setpts=PTS-STARTPTS,tpad=start_duration={waitS:0.000}:start_mode=clone:stop=-1:stop_mode=clone"));
         if (holds.Count > 0 && clip.Look is "zoom" or "duozoom")
         {
             // A step's zoom keeps the zoomAt point still (CSS transform-origin): the visible part starts at o(1 - 1/z).
             var (ox, oy) = ZoomAt(clip.ZoomAt);
             var z = holds.Aggregate("1", (rest, h) => F($"if({Between("it", h.From, h.To)},{Zoom(h.Step):0.00},{rest})"));
-            c.Append(F($",zoompan=z='{z}':x='iw*{ox:0.000}*(1-1/zoom)':y='ih*{oy:0.000}*(1-1/zoom)':d=1:s={width}x{height}:fps=30,format=rgb24"));
+            c.Append(F($",zoompan=z='{z}':x='iw*{ox:0.000}*(1-1/zoom)':y='ih*{oy:0.000}*(1-1/zoom)':d=1:s={width}x{height}:fps={Fps},format=rgb24"));
         }
 
         if (holds.Count > 0 && clip.Look is "duotone" or "duozoom")

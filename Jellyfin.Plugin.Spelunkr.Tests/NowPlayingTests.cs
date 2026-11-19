@@ -2,6 +2,7 @@
 using Jellyfin.Plugin.Spelunkr.Schedule;
 using Jellyfin.Plugin.Spelunkr.Stream;
 using Xunit;
+using static Jellyfin.Plugin.Spelunkr.Tests.TestKit;
 
 namespace Jellyfin.Plugin.Spelunkr.Tests;
 
@@ -31,10 +32,10 @@ public class NowPlayingTests
     public async Task The_next_film_is_found_in_the_real_schedule()
     {
         var engine = ScheduleEngineTests.GumshoeEngine();
-        var bump = StreamPlanTests.OpenBump();
-        var expected = engine.SegmentsBetween("gumshoe", bump.EndMs, bump.EndMs + 3_600_000, "https://audio.spelunkr.tv/bumps/").First(s => s.Kind == "show");
+        var bump = OpenBump();
+        var expected = engine.SegmentsBetween("gumshoe", bump.EndMs, bump.EndMs + 3_600_000, AudioBase).First(s => s.Kind == "show");
 
-        var next = await NowPlaying.NextShowAsync(bump, (at, _) => Task.FromResult(engine.SegmentAt("gumshoe", at, "https://audio.spelunkr.tv/bumps/")), CancellationToken.None);
+        var next = await NowPlaying.NextShowAsync(bump, (at, _) => Task.FromResult(engine.SegmentAt("gumshoe", at, AudioBase)), CancellationToken.None);
 
         Assert.NotNull(next);
         Assert.Equal((expected.StartMs, expected.Title), (next.StartMs, next.Title));
@@ -102,18 +103,16 @@ public class NowPlayingTests
         Assert.All(lines, l => Assert.True(NowPlaying.Ems(l) * np.TitleSize <= NowPlaying.LinePx, l));
     }
 
-    public static TheoryData<string> Modes => new() { "cpu", "gpu" };
-
     [Theory]
-    [MemberData(nameof(Modes))]
+    [MemberData(nameof(Modes), MemberType = typeof(TestKit))]
     public void The_words_are_drawn_onto_the_cabinet_once_before_it_is_looped(string mode)
     {
-        var picture = Cabinet(mode == "gpu" ? Picture.Gpu("/test/render-node") : Picture.Cpu, Film);
+        var picture = Cabinet(PictureFor(mode), Film);
         var jobs = FfmpegJobs.For(Film, Look, 0, 5_000, 0, null, picture).Concat(FfmpegJobs.TuningIn(Film, Look, 4_000, picture));
 
         foreach (var job in jobs.Where(j => j.TextFiles.Keys.Any(k => k.StartsWith("np", StringComparison.Ordinal))))
         {
-            var filter = job.Args[job.Args.ToList().IndexOf("-filter_complex") + 1];
+            var filter = Filter(job);
             var cabinet = filter[filter.IndexOf($"[{job.Args.Count(a => a == "-i") - 1}:v]", StringComparison.Ordinal)..];
             Assert.True(cabinet.IndexOf("textfile=np", StringComparison.Ordinal) is var text and > 0 && text < cabinet.IndexOf("loop=", StringComparison.Ordinal), filter);
             Assert.Equal(["NOW PLAYING", "His Girl", "Friday", "1940"], WindowLines(job));
@@ -121,10 +120,10 @@ public class NowPlayingTests
     }
 
     [Theory]
-    [MemberData(nameof(Modes))]
+    [MemberData(nameof(Modes), MemberType = typeof(TestKit))]
     public void If_the_window_cannot_be_drawn_the_same_jobs_follow_with_the_plain_cabinet(string mode)
     {
-        var picture = Cabinet(mode == "gpu" ? Picture.Gpu("/test/render-node") : Picture.Cpu, Film);
+        var picture = Cabinet(PictureFor(mode), Film);
         var plain = picture with { Window = null };
         static string Shape(FfmpegJob j) => string.Join(' ', j.Args);
 
@@ -145,8 +144,8 @@ public class NowPlayingTests
     [Fact]
     public void The_window_sits_in_the_same_place_on_the_gpu_and_its_cpu_twin()
     {
-        var jobs = FfmpegJobs.For(Film, Look, 0, 5_000, 0, null, Cabinet(Picture.Gpu("/test/render-node"), Film));
-        string Window(FfmpegJob j) => string.Join(",", j.Args[j.Args.ToList().IndexOf("-filter_complex") + 1].Split(',').Where(p => p.Contains("textfile=np", StringComparison.Ordinal)));
+        var jobs = FfmpegJobs.For(Film, Look, 0, 5_000, 0, null, Cabinet(PictureFor("gpu"), Film));
+        string Window(FfmpegJob j) => string.Join(",", Filter(j).Split(',').Where(p => p.Contains("textfile=np", StringComparison.Ordinal)));
 
         Assert.Equal(Window(jobs[0]), Window(jobs[1]));
     }

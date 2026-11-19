@@ -39,7 +39,7 @@ continuous TV stream.
   stream on the wall clock, `ArchiveOriginals` finds a film's better original file on archive.org, `CabinetArt`
   puts the channel's logo on the TV cabinet image, `BumpClips` downloads and measures bump clips ahead of their break,
   `BumpClipVideo` draws a clip under the bump text, `NowPlaying` decides what the cabinet's now-playing window
-  says.
+  says, `StoredFile` writes the content-named files (cabinets, logos, clips) through a temp file and a move.
 - **Live TV landing** (`LiveTvLanding.cs`): on startup, and when an account is created, gives every account with
   no Live TV default screen the Guide (jellyfin-web's `landing-livetv` preference). An existing value is never changed.
 - **Settings** (`Plugin.cs`, `configPage.html`): two switches on Jellyfin's plugin page, "Show the TV cabinet" and
@@ -58,7 +58,7 @@ continuous TV stream.
    a `ChannelStream`. It asks what is on now, asks archive.org's metadata API for a better original of that file
    (2.5 s at most, cached), starts ffmpeg at that point in the file. Opening returns once the first bytes are written, which are the tuning-in card's, ahead of both of those steps. Jellyfin then serves
    `/LiveTv/LiveStreamFiles/<id>/stream.ts` (the file) to the player, transcoding if the player needs it.
-3. Each segment ends exactly on schedule (`-t`, with padding if the file runs short); the next one starts where
+3. Each segment ends exactly on schedule (`-t`, with up to 10 s of padding if the file runs short); the next one starts where
    the schedule says. Every job in a stream writes the same format (1280x720 on the CPU, or 1920x1080 on a VA-API
    GPU; 30 fps, H.264 High 4.1, a keyframe every 2 s, no B-frames, AAC stereo 48 kHz) with timestamps continued
    from the previous job (`-output_ts_offset`), so players see one unbroken stream.
@@ -72,12 +72,16 @@ continuous TV stream.
 - **Jellyfin's own tuner and guide interfaces, not an M3U/XMLTV feed.** Nothing to configure, and the stream can
   be built on demand. The registration pattern follows the Jellyfin-Xtream-Library plugin.
 - **One ffmpeg per segment, re-encoded to fixed settings.** Archive files differ in size and codec, and a mid-stream
-  change breaks players. If a job fails or stops part-way, the next fallback ("same with silence", then a title card)
-  carries on from the exact point it stopped (ffmpeg reports how much it wrote); if all fail, the stream moves
+  change breaks players. A film's padding stops 10 s after its source does (Spelunkr's files run at most half a
+  second short of their listed length), so a download cut off part-way ends the job short instead of freezing the
+  picture until the film's slot ends. A job that played more than 10 s and then stopped is started again where it
+  stopped, up to three times per segment; one that fails sooner moves to the next fallback ("same with silence", then
+  a title card), also from the exact point it stopped (ffmpeg reports how much it wrote). Those two stand-ins run a
+  minute at a time, then the stream asks the schedule again, so the real film is tried again; if all fail, the stream moves
   on by only what was written and asks the schedule again (jumping to now if it fell behind); if nothing at all
   can be written, not even the title card, the stream stops instead of retrying. Remote inputs have a 15 s read timeout, and a job that writes
   nothing for 15 s from its start, or for 45 s once it has written, is killed.
-- **Originals that fail.** This is the one exception to the GPU-then-CPU retry. Metadata can't catch every bad original, so one that fails during playback goes straight to Spelunkr's file and isn't offered again for 12 hours.
+- **Originals that fail.** This is the one exception to the GPU-then-CPU retry. Metadata can't catch every bad original, so one that fails before it has played goes straight to Spelunkr's file and isn't offered again for 12 hours. One that played and then dropped is only left for the rest of that stretch of the film.
 - **Bump clips.** A bump's channel slide can name an archive.org clip that plays under the words, styled with one of
   four looks (flash, duotone, zoom, duozoom). The engine's own clip helpers (exported by `tools/extract-engine`) plan
   it, and `schedule.js` lays the channel slides out the site's way for it (the first slide gets an extra second, where

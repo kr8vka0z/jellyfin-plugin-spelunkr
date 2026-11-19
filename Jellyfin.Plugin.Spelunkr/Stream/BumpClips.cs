@@ -1,7 +1,6 @@
 // BumpClips: downloads bump clips from archive.org ahead of their break and measures them with ffprobe, so a bump job
 // only ever reads a finished local file. A clip that isn't ready when its break starts is skipped, never waited for.
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -18,13 +17,10 @@ public sealed record ReadyClip(string Path, double LengthS);
 /// <summary>Keeps bump clips on disk.</summary>
 public sealed class BumpClips
 {
-    private const string Download = "https://archive.org/download/";
-
     // Clips are short (the site plays them under one bump); anything bigger isn't one and isn't worth the wait.
+    // A failure is retried after ArchiveOriginals.FailedTtl, at a later break, not at every one.
     private const long MaxBytes = 64L * 1024 * 1024;
 
-    // A failure (archive.org returns 5xx now and then) is retried at a later break, not at every one.
-    private static readonly TimeSpan FailedTtl = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan FetchTimeout = TimeSpan.FromMinutes(2);
 
     private readonly Func<string, System.IO.Stream, CancellationToken, Task> _download;
@@ -66,7 +62,7 @@ public sealed class BumpClips
     /// <returns>The download, for tests; callers don't wait for it.</returns>
     public Task Prefetch(string src)
     {
-        if (!src.StartsWith(Download, StringComparison.Ordinal) || Ready(src) is not null
+        if (!src.StartsWith(ArchiveOriginals.Download, StringComparison.Ordinal) || Ready(src) is not null
             || (_failed.TryGetValue(src, out var until) && until > _time.GetUtcNow()))
         {
             return Task.CompletedTask;
@@ -86,22 +82,18 @@ public sealed class BumpClips
     private async Task FetchAsync(string src)
     {
         var path = Path.Combine(_dir, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(src))).ToLowerInvariant() + ".mp4");
-        var part = path + ".part";
         try
         {
             using var timeout = new CancellationTokenSource(FetchTimeout, _time);
-            if (!File.Exists(path))
+            Directory.CreateDirectory(_dir);
+            await StoredFile.SaveAsync(path, async part =>
             {
-                Directory.CreateDirectory(_dir);
                 var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None);
                 await using (file.ConfigureAwait(false))
                 {
                     await _download(src, file, timeout.Token).ConfigureAwait(false);
                 }
-
-                // Renamed only once complete, so a half-written file is never played.
-                File.Move(part, path, true);
-            }
+            }).ConfigureAwait(false);
 
             var length = await _probe(path, timeout.Token).ConfigureAwait(false);
             if (length is not > 0)
@@ -115,8 +107,7 @@ public sealed class BumpClips
         catch (Exception ex)
         {
             _logger.LogInformation(ex, "Spelunkr: bump clip {Url} could not be fetched; its break plays without it", src);
-            _failed[src] = _time.GetUtcNow() + FailedTtl;
-            TryDelete(part);
+            _failed[src] = _time.GetUtcNow() + ArchiveOriginals.FailedTtl;
         }
     }
 
@@ -148,42 +139,10 @@ public sealed class BumpClips
         }
     }
 
-    // stderr isn't redirected (with -v error it's a line at most), so a chatty damaged file can't fill an unread pipe.
-    // A probe still running when ct fires (the fetch timeout) is killed, the way FfmpegProcess ends a stalled job.
+    // A probe still running when ct fires (the fetch timeout) is killed.
     internal static async Task<double?> ProbeAsync(string probePath, string path, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo(probePath) { RedirectStandardOutput = true, UseShellExecute = false };
-        foreach (var arg in new[] { "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path })
-        {
-            psi.ArgumentList.Add(arg);
-        }
-
-        using var process = Process.Start(psi) ?? throw new IOException("could not start " + probePath);
-        try
-        {
-            var output = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
-            await process.WaitForExitAsync(ct).ConfigureAwait(false);
-            return process.ExitCode == 0 && double.TryParse(output.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : null;
-        }
-        finally
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-        }
-    }
-
-    private static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // A leftover .part is overwritten by the next try.
-        }
+        var (code, output) = await FfmpegProcess.RunToExitAsync(probePath, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path], ct).ConfigureAwait(false);
+        return code == 0 && double.TryParse(output.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : null;
     }
 }

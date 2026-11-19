@@ -11,7 +11,8 @@ namespace Jellyfin.Plugin.Spelunkr.Stream;
 /// <summary>Looks up an archive.org item's original video file through archive.org's metadata API.</summary>
 public sealed class ArchiveOriginals
 {
-    private const string Download = "https://archive.org/download/";
+    /// <summary>Where archive.org serves an item's files; BumpClips only fetches from here too.</summary>
+    internal const string Download = "https://archive.org/download/";
 
     // Above this the original (often a near-lossless master) won't stream smoothly over an ordinary connection
     // while ffmpeg reads it at playback speed; Spelunkr's derivative is ~1 Mbps.
@@ -26,9 +27,10 @@ public sealed class ArchiveOriginals
     // ponytail: by extension only; an original in another seekable container (mkv) is passed over.
     private static readonly string[] Seekable = [".mp4", ".m4v", ".mov"];
 
-    // Items never change their files in practice; a failure (archive.org returns 5xx now and then) is retried soon.
+    // Items never change their files in practice; a failure (archive.org returns 5xx now and then) is retried soon,
+    // here and by BumpClips.
     private static readonly TimeSpan FoundTtl = TimeSpan.FromHours(12);
-    private static readonly TimeSpan FailedTtl = TimeSpan.FromMinutes(10);
+    internal static readonly TimeSpan FailedTtl = TimeSpan.FromMinutes(10);
 
     private readonly Func<string, CancellationToken, Task<string>> _fetch;
     private readonly ILogger _logger;
