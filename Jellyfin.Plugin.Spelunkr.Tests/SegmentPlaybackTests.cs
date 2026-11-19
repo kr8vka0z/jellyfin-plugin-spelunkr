@@ -5,6 +5,7 @@ using Jellyfin.Plugin.Spelunkr.Schedule;
 using Jellyfin.Plugin.Spelunkr.Stream;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using static Jellyfin.Plugin.Spelunkr.Tests.TestKit;
 
 namespace Jellyfin.Plugin.Spelunkr.Tests;
 
@@ -12,8 +13,6 @@ public class SegmentPlaybackTests
 {
     private static readonly ChannelLook Look = new("GUMSHOE", "#E8DFC8");
     private static readonly Segment Film = new() { Kind = "show", Url = "https://archive.org/download/x/x.mp4", Title = "X" };
-
-    private static string Arg(FfmpegJob job, string flag) => job.Args[job.Args.ToList().IndexOf(flag) + 1];
 
     [Fact]
     public async Task Film_that_dies_part_way_is_finished_by_the_next_fallback_from_where_it_stopped()
@@ -132,7 +131,7 @@ public class SegmentPlaybackTests
 
         var emitted = await SegmentPlayer.PlayAsync(Film, Look, 0, 60_000, 0, (job, _) =>
         {
-            urls.Add(job.Args[job.Args.ToList().IndexOf("-i") + 1]);
+            urls.Add(Arg(job, "-i"));
             return Task.FromResult(urls.Count == 1 ? 0L : 60_000L);
         }, NullLogger.Instance, CancellationToken.None, original, Picture.Gpu("/dev/dri/renderD128"), () => failures++);
 
@@ -158,13 +157,13 @@ public class SegmentPlaybackTests
         Assert.Contains("libx264", jobs[1].Args);
         Assert.All(jobs, j => Assert.DoesNotContain(j.Args, a => a.Contains("http", StringComparison.Ordinal)));
         Assert.Contains(Film.Title!, jobs[0].TextFiles.Values.Single());
-        Assert.Equal("4.000", jobs[0].Args[jobs[0].Args.ToList().IndexOf("-t") + 1]);
+        Assert.Equal("4.000", Arg(jobs[0], "-t"));
     }
 
     [Fact]
     public void Every_remote_input_has_a_read_timeout()
     {
-        var bump = StreamPlanTests.OpenBump();
+        var bump = OpenBump();
         var jobs = FfmpegJobs.For(Film, Look, 0, 5_000, 0).Concat(FfmpegJobs.For(bump, Look, 0, 5_000, 0));
 
         foreach (var job in jobs)
@@ -180,12 +179,5 @@ public class SegmentPlaybackTests
                 }
             }
         }
-    }
-
-    private sealed class TempDir : IDisposable
-    {
-        public string Path { get; } = Directory.CreateTempSubdirectory("spelunkr-test").FullName;
-
-        public void Dispose() => Directory.Delete(Path, true);
     }
 }

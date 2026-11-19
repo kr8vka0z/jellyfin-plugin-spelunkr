@@ -8,15 +8,13 @@ using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using static Jellyfin.Plugin.Spelunkr.Tests.TestKit;
 
 namespace Jellyfin.Plugin.Spelunkr.Tests;
 
 public partial class PictureTests
 {
-    private const string Device = "/test/render-node";
     private static readonly ChannelLook Look = new("HOMEROOM", "#336699");
-
-    private static string Arg(IReadOnlyList<string> args, string flag) => args[args.ToList().IndexOf(flag) + 1];
 
     private static IEnumerable<IReadOnlyList<FfmpegJob>> EveryKind(Picture picture)
     {
@@ -24,18 +22,18 @@ public partial class PictureTests
         var upNext = new Segment { Kind = "up-next", LengthMs = 10_000, Next = "Y", Sting = new BumpAudio("s.mp3", "https://audio.example/s.mp3", 1) };
         yield return FfmpegJobs.For(show, Look, 0, 5_000, 0, "https://archive.org/download/x/x.m4v", picture);
         yield return FfmpegJobs.For(show with { Kind = "ad" }, Look, 0, 5_000, 0, null, picture);
-        yield return FfmpegJobs.For(StreamPlanTests.OpenBump(), Look, 0, 5_000, 0, null, picture);
+        yield return FfmpegJobs.For(OpenBump(), Look, 0, 5_000, 0, null, picture);
         yield return FfmpegJobs.For(upNext, Look, 0, 5_000, 0, null, picture);
         yield return FfmpegJobs.For(new Segment { Kind = "unknown", Title = "Z" }, Look, 0, 5_000, 0, null, picture);
     }
 
-    public static TheoryData<string, int, int> Modes => new() { { "cpu", 1280, 720 }, { "gpu", 1920, 1080 } };
+    public static TheoryData<string, int, int> Sizes => new() { { "cpu", 1280, 720 }, { "gpu", 1920, 1080 } };
 
     [Theory]
-    [MemberData(nameof(Modes))]
+    [MemberData(nameof(Sizes))]
     public void Every_job_of_every_kind_outputs_the_streams_one_format(string mode, int width, int height)
     {
-        var picture = mode == "gpu" ? Picture.Gpu(Device) : Picture.Cpu;
+        var picture = PictureFor(mode);
 
         foreach (var jobs in EveryKind(picture))
         {
@@ -75,10 +73,10 @@ public partial class PictureTests
     }
 
     [Theory]
-    [MemberData(nameof(Modes))]
+    [MemberData(nameof(Sizes))]
     public void The_stream_is_declared_at_its_real_size_so_jellyfin_never_probes_or_caches_it(string mode, int width, int height)
     {
-        var source = SpelunkrTunerHost.NewMediaSource("spelunkr_x", mode == "gpu" ? Picture.Gpu(Device) : Picture.Cpu);
+        var source = SpelunkrTunerHost.NewMediaSource("spelunkr_x", PictureFor(mode));
         var video = source.MediaStreams.Single(s => s.Type == MediaStreamType.Video);
 
         // Jellyfin probes (and caches the result forever) unless probing is off or a stream has a real index.
@@ -105,12 +103,10 @@ public partial class PictureTests
 
     private const string Cabinet = "/test/cabinet.png";
 
-    public static TheoryData<string> CabinetModes => new() { "cpu", "gpu" };
-
-    private static Picture WithCabinet(string mode) => (mode == "gpu" ? Picture.Gpu(Device) : Picture.Cpu) with { Cabinet = Cabinet };
+    private static Picture WithCabinet(string mode) => PictureFor(mode) with { Cabinet = Cabinet };
 
     [Theory]
-    [MemberData(nameof(CabinetModes))]
+    [MemberData(nameof(Modes), MemberType = typeof(TestKit))]
     public void Every_job_of_every_kind_draws_the_cabinet_when_the_stream_has_one(string mode)
     {
         var picture = WithCabinet(mode);
@@ -201,8 +197,6 @@ public partial class PictureTests
         Assert.True(gpu == (picture.VaapiDevice is not null), because);
         Assert.Equal(gpu ? Picture.Gpu(device) : Picture.Cpu, picture);
     }
-
-    private static List<string> Inputs(IReadOnlyList<string> args) => args.Select((a, i) => (a, i)).Where(x => x.a == "-i").Select(x => args[x.i + 1]).ToList();
 
     // Every place a job sets a frame size: the CPU scale/pad, the color background, and libplacebo.
     [GeneratedRegex(@"(?:scale=|pad=|s=|w=)(?<w>\d+)(?::|x|:h=)(?<h>\d+)")]

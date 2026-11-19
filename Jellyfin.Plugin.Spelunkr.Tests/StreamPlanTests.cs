@@ -4,19 +4,13 @@ using System.Globalization;
 using Jellyfin.Plugin.Spelunkr.Schedule;
 using Jellyfin.Plugin.Spelunkr.Stream;
 using Xunit;
+using static Jellyfin.Plugin.Spelunkr.Tests.TestKit;
 
 namespace Jellyfin.Plugin.Spelunkr.Tests;
 
 public class StreamPlanTests
 {
     private static readonly ChannelLook Gumshoe = new("GUMSHOE", "#E8DFC8");
-
-    // An "open" bump straight from the oracle (Fixtures/timeline-1793217600000.jsonl, index 173).
-    internal static Segment OpenBump() => ScheduleEngineTests.GumshoeEngine()
-        .SegmentsBetween("gumshoe", 1_793_220_818_819, 1_793_220_818_820, "https://audio.spelunkr.tv/bumps/")[0];
-
-    private static string Arg(IReadOnlyList<string> args, string flag, int occurrence = 0) =>
-        args[args.Select((a, i) => (a, i)).Where(x => x.a == flag).ElementAt(occurrence).i + 1];
 
     [Fact]
     public void Open_bump_shows_the_channel_name_during_the_lead_in_then_each_slide_in_turn()
@@ -60,7 +54,7 @@ public class StreamPlanTests
     {
         // From the oracle (Fixtures/timeline-homeroom-1793217600000.jsonl): a 10 s card before "Friendship Begins At Home".
         var card = ScheduleEngineTests.Engine("homeroom")
-            .SegmentsBetween("homeroom", 1_793_217_695_269, 1_793_217_695_270, "https://audio.spelunkr.tv/bumps/")[0];
+            .SegmentsBetween("homeroom", 1_793_217_695_269, 1_793_217_695_270, AudioBase)[0];
         Assert.Equal("up-next", card.Kind);
 
         var job = FfmpegJobs.For(card, new ChannelLook("HOMEROOM", "#336699"), 0, card.LengthMs, 0)[0];
