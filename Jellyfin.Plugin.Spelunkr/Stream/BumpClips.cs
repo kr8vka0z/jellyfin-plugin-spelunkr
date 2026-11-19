@@ -35,6 +35,8 @@ public sealed class BumpClips
     private const double MaxStretchS = 60;
 
     // A failure is retried after ArchiveOriginals.FailedTtl, at a later break, not at every one.
+    // ponytail: no byte cap; the minute-long stretch and this time limit bound what ffmpeg reads (live clips: 8-12 MB).
+    // A source with no index to seek by could read more within the limit; count ffmpeg's input bytes if one shows up.
     private static readonly TimeSpan FetchTimeout = TimeSpan.FromMinutes(2);
 
     private readonly Func<ClipStretch, string, CancellationToken, Task> _cut;
