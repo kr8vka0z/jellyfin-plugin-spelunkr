@@ -1,5 +1,5 @@
 # build-plugin: test the plugin and package it as the zip Jellyfin installs. Shared by release.yml and
-# test-build.yml so a test build is packaged exactly like a release.
+# test-build.yml so a test build is packaged exactly like a release. Callers set up bun first.
 name: Build plugin
 description: Test, build and zip the plugin at a given four-part version
 
@@ -26,6 +26,11 @@ runs:
       with:
         global-json-file: global.json
 
+    # Some tests run the real ffmpeg.
+    - name: Install ffmpeg
+      shell: bash
+      run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
+
     - name: Test and build
       shell: bash
       env:
@@ -39,20 +44,31 @@ runs:
       shell: bash
       env:
         VERSION: ${{ inputs.version }}
-        TARGET_ABI: "12.3.0.0"
+        # Everything the zip ships. Jellyfin's own assemblies aren't published (ExcludeAssets="runtime").
+        DLLS: Jellyfin.Plugin.Spelunkr.dll Jint.dll Acornima.dll
       run: |
+        # A dependency a package upgrade adds would pass every test (they run from the build output) and then
+        # fail to load in Jellyfin, so the published DLLs must be exactly the ones shipped.
+        read -ra shipped <<<"$DLLS"
+        extra=""
+        for f in out/*.dll; do
+          [[ " $DLLS " == *" ${f#out/} "* ]] || extra+=" ${f#out/}"
+        done
+        if [ -n "$extra" ]; then
+          echo "::error::Published but not packaged:$extra. Add it to DLLS here and to the install steps in README.md."
+          exit 1
+        fi
+        TARGET_ABI=$(bun tools/release/feed.ts target-abi)
         ZIP="jellyfin-plugin-spelunkr_$VERSION.zip"
         mkdir pkg
-        cp out/Jellyfin.Plugin.Spelunkr.dll out/Jint.dll out/Acornima.dll pkg/
+        (cd out && cp -- "${shipped[@]}" ../pkg/)
         # meta.json lets a manually unzipped copy load with the right name and version.
         jq --arg v "$VERSION" --arg abi "$TARGET_ABI" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
           '.[0] | {guid, name, description, overview, owner, category, version: $v, targetAbi: $abi, timestamp: $ts, changelog: "", status: "Active", autoUpdate: true, assemblies: []}' \
           manifest.json > pkg/meta.json
         # Python's zipfile, not `zip`: on the runner `zip` exited 0 without writing the file (v0.1.0 run).
         python3 -m zipfile -c "$ZIP" pkg/*
-        # No pipe, so bash -e stops here if md5sum fails (the step runs without pipefail).
-        md5=$(md5sum "$ZIP")
-        md5="${md5%% *}"
+        md5=$(md5sum "$ZIP" | cut -d' ' -f1)
         {
           echo "zip=$ZIP"
           echo "md5=$md5"

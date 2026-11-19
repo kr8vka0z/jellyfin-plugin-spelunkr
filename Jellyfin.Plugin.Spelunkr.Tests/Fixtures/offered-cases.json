@@ -1,0 +1,13 @@
+[
+  { "name": "a numbered channel", "offered": true, "channel": { "id": "gumshoe", "name": "GUMSHOE", "color": "#123456", "dial": 101, "versions": [] } },
+  { "name": "flags set to false", "offered": true, "channel": { "id": "late-nite-2", "name": "X", "color": "#123456", "dial": 0, "versions": [], "comingSoon": false, "debugOnly": false, "audioOverlay": false } },
+  { "name": "no number", "offered": false, "channel": { "id": "test-pattern", "name": "X", "color": "#123456", "versions": [] } },
+  { "name": "a null number", "offered": false, "channel": { "id": "test-pattern", "name": "X", "color": "#123456", "dial": null, "versions": [] } },
+  { "name": "coming soon", "offered": false, "channel": { "id": "soon", "name": "X", "color": "#123456", "dial": 7, "versions": [], "comingSoon": true } },
+  { "name": "debug only", "offered": false, "channel": { "id": "rocket-punch", "name": "X", "color": "#123456", "dial": 51, "versions": [], "debugOnly": true } },
+  { "name": "audio overlay", "offered": false, "channel": { "id": "vacation-slides", "name": "X", "color": "#123456", "dial": 600, "versions": [], "audioOverlay": true } },
+  { "name": "an id with capitals", "offered": false, "channel": { "id": "Gumshoe", "name": "X", "color": "#123456", "dial": 101, "versions": [] } },
+  { "name": "an id with a slash", "offered": false, "channel": { "id": "a/b", "name": "X", "color": "#123456", "dial": 101, "versions": [] } },
+  { "name": "an id with a dot", "offered": false, "channel": { "id": "..", "name": "X", "color": "#123456", "dial": 101, "versions": [] } },
+  { "name": "an empty id", "offered": false, "channel": { "id": "", "name": "X", "color": "#123456", "dial": 101, "versions": [] } }
+]
