@@ -172,6 +172,22 @@ public class SegmentPlaybackTests
     }
 
     [Fact]
+    public async Task A_failed_job_logs_its_last_error_lines_including_ones_with_an_equals_sign()
+    {
+        using var dir = new TempDir();
+        var logger = new ListLogger();
+        var job = new FfmpegJob(["-c", "for i in $(seq 1 500); do echo \"decode error $i\" >&2; done; echo \"Failed to set value 'vaapi=va:/test/nope' for option 'init_hw_device'\" >&2; echo out_time_us=0 >&2; echo speed=1x >&2; exit 1"], new Dictionary<string, string>());
+
+        await FfmpegProcess.RunAsync("/bin/sh", job, dir.Path, System.IO.Stream.Null, () => { }, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10), logger, CancellationToken.None);
+
+        var lines = Assert.Single(logger.Messages).Split(" | ");
+        Assert.InRange(lines.Length, 2, 50);
+        Assert.Contains("vaapi=va:/test/nope", lines[^1], StringComparison.Ordinal);
+        Assert.EndsWith("decode error 500", lines[^2], StringComparison.Ordinal);
+        Assert.DoesNotContain(lines, l => l.Contains("speed=", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task A_job_that_stops_sending_is_killed()
     {
         using var dir = new TempDir();

@@ -2,6 +2,7 @@
 // one place so a change to the argument layout or the fixtures is made once.
 using Jellyfin.Plugin.Spelunkr.Schedule;
 using Jellyfin.Plugin.Spelunkr.Stream;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Jellyfin.Plugin.Spelunkr.Tests;
@@ -40,6 +41,25 @@ internal static class TestKit
 
     /// <summary>A job's -t, in ms: what a fake runner returns for a job that runs to its end.</summary>
     public static long AskedMs(FfmpegJob job) => (long)Math.Round(double.Parse(Arg(job, "-t"), System.Globalization.CultureInfo.InvariantCulture) * 1000);
+
+    /// <summary>A logger that keeps each message.</summary>
+    public sealed class ListLogger : ILogger
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            lock (Messages)
+            {
+                Messages.Add(formatter(state, exception));
+            }
+        }
+    }
 
     /// <summary>A temp folder, deleted with everything in it.</summary>
     public sealed class TempDir : IDisposable

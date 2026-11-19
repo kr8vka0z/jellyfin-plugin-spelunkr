@@ -9,6 +9,8 @@ namespace Jellyfin.Plugin.Spelunkr.Stream;
 /// <summary>Runs ffmpeg jobs.</summary>
 internal static class FfmpegProcess
 {
+    private const int MaxErrorLines = 40;
+
     /// <summary>
     /// Runs <paramref name="job"/> in <paramref name="workDir"/>, appending stdout to <paramref name="output"/>.
     /// Returns the ms of media emitted. A job that writes nothing for <paramref name="stallTimeout"/> is killed:
@@ -37,7 +39,8 @@ internal static class FfmpegProcess
 
         using var process = Process.Start(psi) ?? throw new IOException("could not start " + exe);
         long emittedUs = 0;
-        var errors = new List<string>();
+        // The last lines that aren't progress reports: a damaged film can print an error per frame for an hour.
+        var errors = new Queue<string>();
         var stderr = Task.Run(
             async () =>
             {
@@ -50,9 +53,13 @@ internal static class FfmpegProcess
                             Interlocked.Exchange(ref emittedUs, Math.Max(us, Interlocked.Read(ref emittedUs)));
                         }
                     }
-                    else if (!line.Contains('=', StringComparison.Ordinal))
+                    else if (!IsProgress(line))
                     {
-                        errors.Add(line);
+                        errors.Enqueue(line);
+                        if (errors.Count > MaxErrorLines)
+                        {
+                            errors.Dequeue();
+                        }
                     }
                 }
             },
@@ -107,5 +114,13 @@ internal static class FfmpegProcess
         }
 
         return Interlocked.Read(ref emittedUs) / 1000;
+    }
+
+    // -progress lines are key=value with lowercase keys (frame, out_time_us, speed...). Error lines can hold an '=' too,
+    // and the one naming a bad option value ("Failed to set value 'vaapi=va:...'") is the one worth keeping.
+    private static bool IsProgress(string line)
+    {
+        var eq = line.IndexOf('=', StringComparison.Ordinal);
+        return eq > 0 && !line.AsSpan(0, eq).ContainsAnyExcept("abcdefghijklmnopqrstuvwxyz0123456789_");
     }
 }
