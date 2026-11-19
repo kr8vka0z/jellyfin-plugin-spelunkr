@@ -1,4 +1,4 @@
-// live-pool.test.ts: proves a failure is retried alone, and that only a second failure counts. bun test tools/check
+// live-pool.test.ts: proves a failure is retried alone after one wait, and that only a second failure counts. bun test tools/check
 import { expect, test } from "bun:test";
 import { runLive } from "./live-pool.ts";
 
@@ -35,4 +35,22 @@ test("retries run one at a time, after every first attempt has finished", async 
   });
   expect(log.slice(0, 3).every((l) => l.startsWith("first"))).toBe(true);
   expect(log.slice(3)).toEqual(["retry with 0 running", "retry with 0 running", "retry with 0 running"]);
+});
+
+test("waits once, after every first attempt and before the first retry", async () => {
+  const seen = new Set<string>();
+  const log: string[] = [];
+  await runLive(["a", "b", "c"], 3, async (id) => {
+    const retry = seen.has(id);
+    seen.add(id);
+    log.push(retry ? "retry" : "first");
+    return ok(id, retry);
+  }, async () => { log.push("wait"); });
+  expect(log).toEqual(["first", "first", "first", "wait", "retry", "retry", "retry"]);
+});
+
+test("no wait when every channel passes", async () => {
+  let waits = 0;
+  await runLive(["a", "b"], 2, async (id) => ok(id, true), async () => { waits++; });
+  expect(waits).toBe(0);
 });
