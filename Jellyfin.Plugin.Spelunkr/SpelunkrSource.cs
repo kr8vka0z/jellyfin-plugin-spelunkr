@@ -204,16 +204,15 @@ public sealed partial class SpelunkrSource
                         {
                             added |= await LoadVersionAsync(channel.Id, pointer, cancellationToken).ConfigureAwait(false);
                         }
+
+                        // Only once every listed version is in: forgetting first could leave a channel with nothing.
+                        ForgetUnlisted(channel);
                     }
                     catch (Exception ex) when (!IsCallerCancel(ex, cancellationToken))
                     {
                         _logger.LogWarning(ex, "Could not load Spelunkr channel {Channel}", channel.Id);
                         anyFailed = true;
-                        continue;
                     }
-
-                    // Only once every listed version is in: forgetting first could leave a channel with nothing.
-                    ForgetUnlisted(channel);
                 }
 
                 // A platform file stays as long as any loaded manifest uses it.
@@ -316,7 +315,7 @@ public sealed partial class SpelunkrSource
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException)
             {
-                _logger.LogWarning(ex, "Skipped malformed Spelunkr channel {Channel}", element.TryGetProperty("id", out var id) ? id.ToString() : "(no id)");
+                _logger.LogWarning(ex, "Skipped malformed Spelunkr channel {Channel}", element.ValueKind == JsonValueKind.Object && element.TryGetProperty("id", out var id) ? id.ToString() : "(no id)");
             }
         }
 

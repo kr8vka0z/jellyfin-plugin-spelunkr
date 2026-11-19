@@ -16,7 +16,7 @@ public sealed class ScheduleEngine
     // Jint engines are not thread-safe; every call goes through this lock. A lookup costs well under a
     // millisecond once a cycle is built, so one lock for all channels is fine. The first lookups after a version
     // loads are slower, because the engine first builds every cycle since the version's epoch; they hold the lock
-    // for that time (part of the 0.4 to 1.7 s a fresh 7-day guide build of a fixture channel took in a test).
+    // for that time (a first 7-day walk of a fixture channel took 110 to 180 ms in a test, a repeat 4 to 30 ms).
     private readonly Lock _lock = new();
     private readonly Engine _js;
     private readonly JsFunctions _fn;

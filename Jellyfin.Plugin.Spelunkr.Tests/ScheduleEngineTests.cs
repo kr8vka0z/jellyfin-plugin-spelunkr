@@ -76,6 +76,27 @@ public class ScheduleEngineTests
     }
 
     [Fact]
+    public void Forgetting_an_old_version_leaves_the_newer_ones_schedule_unchanged()
+    {
+        // Two engines with v19 and v20; one forgets v19 before anything is looked up, so nothing is cached.
+        const long takeover = 1_793_404_800_000;
+        var v20 = JsonNode.Parse(File.ReadAllText(Path.Combine(FixtureDir, "manifests/gumshoe/v19.json")))!;
+        v20["version"] = 20;
+        var engines = new[] { GumshoeEngine(), GumshoeEngine() };
+        foreach (var e in engines)
+        {
+            e.AddVersion("gumshoe", v20.ToJsonString(), File.ReadAllText(Path.Combine(FixtureDir, (string)v20["platform"]!)), SpelunkrSourceTests.GumshoePointer(20, takeover, takeover).ToJsonString());
+        }
+
+        engines[1].KeepVersions("gumshoe", [20]);
+
+        Assert.Equal(
+            engines[0].SegmentsBetweenJson("gumshoe", takeover, takeover + (24 * 3_600_000L), AudioBase),
+            engines[1].SegmentsBetweenJson("gumshoe", takeover, takeover + (24 * 3_600_000L), AudioBase));
+        Assert.Equal(20, engines[1].SegmentAt("gumshoe", takeover - 60_000, AudioBase).Version); // v19 is gone
+    }
+
+    [Fact]
     public void Now_matches_oracle_at_every_fixture_time()
     {
         var engine = GumshoeEngine();

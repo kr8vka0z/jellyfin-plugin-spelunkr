@@ -442,6 +442,19 @@ public class SpelunkrSourceTests
     }
 
     [Fact]
+    public async Task A_channel_entry_that_is_not_an_object_or_a_version_number_that_is_text_costs_only_that_channel()
+    {
+        var lineup = LineupWith(l =>
+        {
+            Versions(l, "gumshoe")[0]!["v"] = "19";
+            l["channels"]!.AsArray().Add(null);
+        });
+        var source = new SpelunkrSource(Reader(() => lineup), NullLogger<SpelunkrSource>.Instance);
+
+        Assert.Contains("homeroom", (await source.GetChannelsAsync(CancellationToken.None)).Select(c => c.Id));
+    }
+
+    [Fact]
     public async Task Versions_the_lineup_stops_listing_are_forgotten_but_never_while_their_replacement_fails_to_load()
     {
         var clock = new Clock(DateTimeOffset.FromUnixTimeMilliseconds(1_793_000_000_000));

@@ -136,10 +136,10 @@ All of it runs from `.github/workflows/release.yml` and `test-build.yml`; `AGENT
   API. Adding them means building that music track in ffmpeg.
 - "Up next" cards (channels with `block`) are drawn as one still card over their sting; the site animates the
   words onto the music's beats.
-- The JavaScript engine is not what makes a first guide refresh slow. In a test on two fixture channels, a 7-day
-  guide build took 0.4 to 0.9 s on a freshly loaded schedule (mostly the engine building every cycle since the
-  version's start) and 15 to 50 ms after that. Over 30 channels that is seconds; if a whole refresh takes minutes,
-  look at the downloads (first start) and Jellyfin's own work saving the programmes.
+- The JavaScript engine is not what makes a first guide refresh slow. In a test on two fixture channels, the
+  engine's first 7-day walk on a freshly loaded schedule took 110 to 180 ms (it builds every cycle since the
+  version's start) and a repeat 4 to 30 ms. Over 30 channels that is seconds; if a whole refresh takes minutes,
+  look at the downloads (first start) and Jellyfin's own side first.
 
 - Without the platform file named in a manifest, the engine silently drops all bumps and ads and the timing is
   wrong. `schedule.js` refuses to load a manifest without it.
