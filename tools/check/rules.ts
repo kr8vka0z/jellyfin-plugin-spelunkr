@@ -49,7 +49,11 @@ export function lineupProblems(channels: any[]): string[] {
 
 const show = (v: unknown) => JSON.stringify(v)?.slice(0, 80);
 
-/** The kind of a problem line: the same field on any channel, version or item counts as one kind. */
+/**
+ * The kind of a problem line: the same field on any channel, version or item counts as one kind.
+ * ponytail: regexes over the rendered lines, so a new line shape may group less well (it is never lost, only listed).
+ * If that matters, have problems carry their kind.
+ */
 const problemKind = (line: string) =>
   line
     .replace(/^channel [^ .]+/, "channel *")

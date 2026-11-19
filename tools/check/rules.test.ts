@@ -49,6 +49,6 @@ test("thousands of problem lines become a few per kind, and the report fits a Gi
   expect(huge.length).toBeGreaterThan(65_536);
   const fitted = fitReport(huge);
   expect(fitted.length).toBeLessThanOrEqual(REPORT_LIMIT);
-  expect(fitted).toEndWith("in the job log (Run link below).");
+  expect(fitted.startsWith(huge.slice(0, 1000))).toBe(true);
   expect(fitReport("short")).toBe("short");
 });

@@ -1,7 +1,8 @@
 # spelunkr-check.yml: once a day, check that spelunkr.tv still works the way this plugin expects (data shape,
 # engine version, and what is actually playing on every channel). On failure, open or update an issue labelled
 # broken-by-spelunkr with the details. Run it by hand with simulate_break to prove the issue path works.
-# GitHub starts a timer only from main's copy of this file, so that copy checks main and dev in turn.
+# GitHub starts a timer only from main's copy of this file, so that copy checks main, then dev when dev's check
+# code differs.
 name: Spelunkr check
 
 on:
@@ -49,9 +50,10 @@ jobs:
   check:
     needs: branches
     runs-on: ubuntu-latest
-    # Above the worst case, so a slow run still ends in a report: 30 channels 5 at a time, each up to 5 minutes, then
-    # every failure again alone (about 3 hours if all fail). A job that runs out of time files no issue.
-    timeout-minutes: 240
+    # Above the worst case, so a slow run still ends in a report (a job that runs out of time files no issue). Each
+    # channel can take 5 minutes in a pass of 5 at once, then 5 more alone if it failed: about 6 minutes a channel,
+    # 3.5 hours for today's 35. Raise this if the lineup passes about 45 channels.
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       max-parallel: 1 # one at a time, so two failures share one issue

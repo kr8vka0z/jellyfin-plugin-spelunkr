@@ -84,6 +84,8 @@ await check("data", async () => {
       expect(w, p, "startIndex", "integer", true);
       expect(w, p, "details", "string", true);
     }
+    // ponytail: the shared platform file is fetched once per channel (about 27 KB x 35 a day). If that grows, pass
+    // loadVersions a caching read.
     const loaded = await loadVersions(ch.versions ?? [], readText, true);
     for (const { pointer: p, text, platform, details } of loaded) {
       const w = `${channelId} v${p.v}`;

@@ -49,7 +49,7 @@ runs:
       run: |
         # A dependency a package upgrade adds would pass every test (they run from the build output) and then
         # fail to load in Jellyfin, so the published DLLs must be exactly the ones shipped.
-        read -ra dlls <<<"$DLLS"
+        read -ra shipped <<<"$DLLS"
         extra=""
         for f in out/*.dll; do
           [[ " $DLLS " == *" ${f#out/} "* ]] || extra+=" ${f#out/}"
@@ -61,7 +61,7 @@ runs:
         TARGET_ABI=$(bun tools/release/feed.ts target-abi)
         ZIP="jellyfin-plugin-spelunkr_$VERSION.zip"
         mkdir pkg
-        (cd out && cp -- "${dlls[@]}" ../pkg/)
+        (cd out && cp -- "${shipped[@]}" ../pkg/)
         # meta.json lets a manually unzipped copy load with the right name and version.
         jq --arg v "$VERSION" --arg abi "$TARGET_ABI" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
           '.[0] | {guid, name, description, overview, owner, category, version: $v, targetAbi: $abi, timestamp: $ts, changelog: "", status: "Active", autoUpdate: true, assemblies: []}' \
