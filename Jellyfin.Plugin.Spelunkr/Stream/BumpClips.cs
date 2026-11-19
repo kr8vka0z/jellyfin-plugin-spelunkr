@@ -32,7 +32,7 @@ public sealed class BumpClips
     private const double TailS = 1;
 
     // A break's clip plays over a few slides; a longer stretch is a plan this doesn't expect and isn't worth the fetch.
-    internal const double MaxStretchS = 60;
+    private const double MaxStretchS = 60;
 
     // A failure is retried after ArchiveOriginals.FailedTtl, at a later break, not at every one.
     private static readonly TimeSpan FetchTimeout = TimeSpan.FromMinutes(2);
@@ -165,7 +165,7 @@ public sealed class BumpClips
         var (code, _) = await FfmpegProcess.RunToExitAsync(
             ffmpegPath,
             ["-hide_banner", "-loglevel", "error", "-nostdin", "-y", .. FfmpegJobs.Remote, "-ss", Seconds(stretch.StartS), .. length, "-i", stretch.Src,
-             "-map", "0:v:0", "-an", "-sn", "-dn", "-vf", $"fps={Picture.Fps}:start_time=0,scale='min(iw,1920)':'min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+             "-map", "0:v:0", "-vf", $"fps={Picture.Fps}:start_time=0,scale='min(iw,1920)':'min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2",
              "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-f", "mp4", to],
             ct).ConfigureAwait(false);
         if (code != 0)
