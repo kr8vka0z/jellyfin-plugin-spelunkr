@@ -89,16 +89,19 @@ public sealed record BumpLayout(long LeadInMs, long TailMs, long GapMs);
 /// </summary>
 /// <param name="Src">The clip's archive.org download URL.</param>
 /// <param name="To">Where the clip is cut off, seconds; null for its whole length.</param>
-/// <param name="Look">"flash", "duotone", "zoom" or "duozoom".</param>
+/// <param name="Look">One of the six looks in <see cref="Stream.BumpClipVideo.Looks"/>.</param>
 /// <param name="WordsOver">Whether the words show while the clip moves.</param>
 /// <param name="ZoomAt">The zoom's fixed point, "X% Y%"; null for the middle.</param>
 /// <param name="First">The slide the clip starts on.</param>
 /// <param name="Motion">How many slides, from <paramref name="First"/>, the clip plays over.</param>
 /// <param name="StartMs">When the clip comes into view.</param>
 /// <param name="MotionEndMs">When the clip ends and holds its last frame.</param>
-/// <param name="EndMs">When the clip leaves (the end of the last channel slide).</param>
+/// <param name="EndMs">When the clip leaves: the end of the last channel slide, or a second later for a clip that plays on
+/// into the channel half's tail.</param>
 /// <param name="Slides">Each channel slide's timing, one per slide.</param>
-public sealed record BumpClip(string Src, double? To, string Look, bool WordsOver, string? ZoomAt, int First, int Motion, long StartMs, long MotionEndMs, long EndMs, IReadOnlyList<ClipSlide> Slides);
+/// <param name="WordsAt">Where the words sit over the clip, "centre" or "lower", as smaller white captions; null for the usual words.</param>
+/// <param name="WordsEdge">"stroke" for a black outline round the captions; null for none.</param>
+public sealed record BumpClip(string Src, double? To, string Look, bool WordsOver, string? ZoomAt, int First, int Motion, long StartMs, long MotionEndMs, long EndMs, IReadOnlyList<ClipSlide> Slides, string? WordsAt = null, string? WordsEdge = null);
 
 /// <summary>One channel slide of a clip bump.</summary>
 /// <param name="StartMs">When it shows, ms from the bump's start.</param>

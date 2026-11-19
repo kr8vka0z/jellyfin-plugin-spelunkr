@@ -35,10 +35,13 @@ function clip(bump) {
     at = e.endS;
     return e;
   });
-  const span = clipSpan(entries, plan);
+  // The site hands the span the start of the gap after the channel half (its 1 s "channel-black" tail, TAIL_B_MS here):
+  // a `playOn` clip keeps playing into that tail instead of stopping with the last slide.
+  const span = clipSpan(entries, plan, at + TAIL_B_MS / 1000);
   if (!span) return null;
   return {
     src: plan.src, to: plan.to, look: plan.look, wordsOver: plan.wordsOver, zoomAt: plan.zoomAt, first: plan.first, motion: plan.motion,
+    wordsAt: plan.wordsAt, wordsEdge: plan.wordsEdge,
     startMs: ms(span.startS), motionEndMs: ms(span.motionEndS), endMs: ms(span.endS),
     slides: entries.map((e, i) => ({ startMs: ms(e.startS), endMs: ms(e.endS), holdStep: holdStep(plan, i), hidden: wordsHidden(plan, i) })),
   };

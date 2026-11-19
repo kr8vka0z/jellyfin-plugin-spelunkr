@@ -1,5 +1,6 @@
 // BumpClipVideo: the ffmpeg filter chain that plays a bump's archive.org clip under its channel slides, timed and
-// styled like spelunkr.tv's bump renderer (index-DRgRcbfS.js) and its CSS (index-ZTw_ptYa.css), 2026-11-09 build.
+// styled like spelunkr.tv's bump renderer (index-DRgRcbfS.js) and its CSS (index-ZTw_ptYa.css), 2026-11-09 build. The
+// wide and widen looks and the tail of a clip that plays on follow the 2026-11-10 renderer (CSS index-DTmyWwRk5A.css).
 using System.Globalization;
 using System.Text;
 using Jellyfin.Plugin.Spelunkr.Schedule;
@@ -17,6 +18,12 @@ public static class BumpClipVideo
     private const double HitS = 0.22;
 
     private const double Fps = 30;
+
+    // A clip that plays on into the channel half's tail fades out over this long (CSS bump-clip-fade, linear).
+    private const double FadeS = 0.9;
+
+    /// <summary>Gets the looks drawn here: the engine's own list (`clipLooks`), which a test keeps in step with it.</summary>
+    public static IReadOnlyList<string> Looks { get; } = ["flash", "duotone", "zoom", "duozoom", "widen", "wide"];
 
     /// <summary>
     /// Where in the clip the picture is at <paramref name="atS"/> seconds into the bump: the engine's clip clock (`dv`),
@@ -85,18 +92,32 @@ public static class BumpClipVideo
         var trimFrom = Math.Clamp(waitS > 0 ? 0 : ClipTimeS(clip, lengthS, from), 0, Math.Max(0, holdS - (1 / Fps)));
         var trimTo = Math.Max(holdS, trimFrom + (1 / Fps));
 
-        // Hold steps on the clip chain's clock, with their step numbers.
+        // Hold steps on the clip chain's clock, with their step numbers. A clip that plays on past the last slide keeps
+        // that slide's step through the tail (the site leaves data-hold-step set there).
+        var lastEndMs = clip.Slides.Count > 0 ? clip.Slides[^1].EndMs : clip.EndMs;
         var holds = clip.Slides.Where(s => s.HoldStep >= 0)
-            .Select(s => (Step: s.HoldStep, From: (s.StartMs / 1000.0) - from, To: (s.EndMs / 1000.0) - from))
+            .Select(s => (Step: s.HoldStep, From: (s.StartMs / 1000.0) - from, To: ((s.EndMs == lastEndMs ? clip.EndMs : s.EndMs) / 1000.0) - from))
             .Where(h => h.To > 0).ToList();
 
+        // CSS object-fit: contain fits the clip inside the card on black; cover (wide always, widen on hold steps) fills
+        // the card, cropping around zoomAt (object-position).
+        var (ox, oy) = ZoomAt(clip.ZoomAt);
+        var contain = F($"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=rgb24");
+        var cover = F($"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}:(iw-ow)*{ox:0.000}:(ih-oh)*{oy:0.000},setsar=1,format=rgb24");
+        var widen = holds.Count > 0 && clip.Look == "widen";
+
         var c = new StringBuilder();
-        c.Append(F($"[{input}:v]setpts=PTS-STARTPTS,fps=30,scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=rgb24"));
+        c.Append(F($"[{input}:v]setpts=PTS-STARTPTS,fps=30{(widen ? string.Empty : "," + (clip.Look == "wide" ? cover : contain))}"));
         c.Append(F($",trim=start={trimFrom:0.000}:end={trimTo:0.000},setpts=PTS-STARTPTS,tpad=start_duration={waitS:0.000}:start_mode=clone:stop=-1:stop_mode=clone"));
+        if (widen)
+        {
+            // Both fits of every frame, the filled one shown on hold steps; the CSS switches between them instantly too.
+            c.Append(F($",split[wa][wb];[wa]{contain}[wfit];[wb]{cover}[wfill];[wfit][wfill]overlay=format=rgb:enable='{Any(holds)}',format=rgb24"));
+        }
+
         if (holds.Count > 0 && clip.Look is "zoom" or "duozoom")
         {
             // A step's zoom keeps the zoomAt point still (CSS transform-origin): the visible part starts at o(1 - 1/z).
-            var (ox, oy) = ZoomAt(clip.ZoomAt);
             var z = holds.Aggregate("1", (rest, h) => F($"if({Between("it", h.From, h.To)},{Zoom(h.Step):0.00},{rest})"));
             c.Append(F($",zoompan=z='{z}':x='iw*{ox:0.000}*(1-1/zoom)':y='ih*{oy:0.000}*(1-1/zoom)':d=1:s={width}x{height}:fps=30,format=rgb24"));
         }
@@ -118,6 +139,13 @@ public static class BumpClipVideo
             }
 
             c.Append(F($",lutrgb=r=val*{Tint(16):0.0000}:g=val*{Tint(8):0.0000}:b=val*{Tint(0):0.0000}:enable='{all}'"));
+        }
+
+        if (clip.EndMs > lastEndMs)
+        {
+            // Plays on into the tail, fading to the black behind it.
+            // ponytail: a job that joins part-way through the fade starts it again from full; under a second, rarely.
+            c.Append(F($",fade=t=out:st={Math.Max(0, (lastEndMs / 1000.0) - from):0.000}:d={FadeS:0.0}:color=black"));
         }
 
         c.Append(",format=yuv420p");
