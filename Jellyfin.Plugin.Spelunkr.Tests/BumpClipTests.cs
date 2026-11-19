@@ -18,15 +18,16 @@ public class BumpClipTests
     private static readonly ReadyClip Clip = new("/clips/c.mp4", 12.545879);
 
     // One engine run per look: a Segment is an immutable record, so tests can share it.
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, string?), Segment> ClipBumps = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, string?, string?, string?, bool), Segment> ClipBumps = new();
 
     /// <summary>
     /// gs-075 (TestKit.OpenBump) with a made-up clip on its first slide, the second slide under it, and the last
     /// two as hold steps: the same manifest edit a preview build makes.
     /// </summary>
-    internal static Segment ClipBump(string look = "duozoom", string? zoomAt = null) => ClipBumps.GetOrAdd((look, zoomAt), _ => BuildClipBump(look, zoomAt));
+    internal static Segment ClipBump(string look = "duozoom", string? zoomAt = null, string? wordsAt = null, string? wordsEdge = null, bool playOn = false)
+        => ClipBumps.GetOrAdd((look, zoomAt, wordsAt, wordsEdge, playOn), _ => BuildClipBump(look, zoomAt, wordsAt, wordsEdge, playOn));
 
-    private static Segment BuildClipBump(string look, string? zoomAt)
+    private static Segment BuildClipBump(string look, string? zoomAt, string? wordsAt, string? wordsEdge, bool playOn)
     {
         var engine = new ScheduleEngine();
         var lineup = JsonNode.Parse(File.ReadAllText(Path.Combine(ScheduleEngineTests.FixtureDir, "lineup.json")))!;
@@ -43,6 +44,12 @@ public class BumpClipTests
                 if (zoomAt is not null)
                 {
                     slides[0]!["zoomAt"] = zoomAt;
+                }
+
+                (slides[0]!["wordsAt"], slides[0]!["wordsEdge"]) = (wordsAt, wordsEdge);
+                if (playOn)
+                {
+                    slides[0]!["playOn"] = true;
                 }
 
                 slides[1]!["under"] = true;
@@ -167,6 +174,73 @@ public class BumpClipTests
         var graph = Filter(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
 
         Assert.Contains(":x='iw*0.200*(1-1/zoom)':y='ih*0.750*(1-1/zoom)':", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Every_look_the_engine_accepts_is_drawn()
+    {
+        // The engine quietly turns a look it doesn't know into "flash", so a new look on the site would otherwise play
+        // here as something else without anything failing.
+        var js = new Engine();
+        using (var engineJs = typeof(ScheduleEngine).Assembly.GetManifestResourceStream("engine.js")!)
+        using (var reader = new StreamReader(engineJs))
+        {
+            js.Modules.Add("./engine.js", reader.ReadToEnd());
+        }
+
+        js.Modules.Add("looks", "import { clipLooks } from './engine.js'; export const all = JSON.stringify(clipLooks);");
+        var engineLooks = System.Text.Json.JsonSerializer.Deserialize<string[]>(js.Modules.Import("looks").Get("all").AsString())!;
+
+        Assert.Contains("flash", engineLooks); // the export names the looks list, not a neighbour
+        Assert.Subset(BumpClipVideo.Looks.ToHashSet(), engineLooks.ToHashSet());
+    }
+
+    [Theory]
+    [InlineData("wide", false)] // filled from the start
+    [InlineData("widen", true)] // fitted while it moves, filled on the hold steps
+    public void Wide_fills_the_card_around_zoomAt_and_widen_only_on_hold_steps(string look, bool onHoldSteps)
+    {
+        var bump = ClipBump(look, "50% 30%");
+
+        var graph = Filter(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
+
+        // CSS object-fit: cover with object-position 50% 30%.
+        var filled = "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720:(iw-ow)*0.500:(ih-oh)*0.300,setsar=1,format=rgb24";
+        Assert.Contains(filled, graph, StringComparison.Ordinal);
+        Assert.Equal(!onHoldSteps, graph.StartsWith($"[2:v]setpts=PTS-STARTPTS,fps=30,{filled},trim=", StringComparison.Ordinal));
+        Assert.Equal(onHoldSteps, graph.Contains("[wfit][wfill]overlay=format=rgb:enable='gte(t,9.060)*lt(t,13.035)+gte(t,13.035)*lt(t,15.535)'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_clip_that_plays_on_runs_into_the_tail_and_fades_out_like_the_site()
+    {
+        var bump = ClipBump("zoom", playOn: true);
+        var clip = bump.Clip!;
+
+        var graph = Filter(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
+
+        // The site's span ends at its gap start: the last slide's end (19.035 s) plus the 1 s channel-black tail. The clip
+        // keeps moving to there, so its clock runs a second later than a clip that stops with the slides.
+        Assert.Equal((20_035L, 20_035L), (clip.MotionEndMs, clip.EndMs));
+        Assert.Contains("fade=t=out:st=15.535:d=0.9:color=black", graph, StringComparison.Ordinal);
+        Assert.Contains("overlay=eof_action=pass:enable='gte(t,3.500)*lt(t,20.035)'", graph, StringComparison.Ordinal);
+        Assert.Contains("if(gte(it,13.035)*lt(it,16.535),1.55,", graph, StringComparison.Ordinal); // last step held through the tail
+        Assert.DoesNotContain("fade=", Filter(FfmpegJobs.For(ClipBump("zoom"), Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("centre", null, "fontcolor=0xFFFFFF:fontsize=30:line_spacing=8:text_align=C:x=(w-tw)/2:y=(h-th)/2:")]
+    [InlineData("lower", null, "fontcolor=0xFFFFFF:fontsize=30:line_spacing=8:text_align=C:x=(w-tw)/2:y=h-th-94:")]
+    [InlineData("centre", "stroke", "fontcolor=0xFFFFFF:borderw=3:bordercolor=0x000000:fontsize=30:")]
+    [InlineData(null, "stroke", "fontcolor=0xE8DFC8:fontsize=48:")] // the engine drops an edge without a position
+    public void Words_over_the_clip_take_the_sites_caption_position_and_edge(string? wordsAt, string? wordsEdge, string drawn)
+    {
+        var bump = ClipBump("wide", wordsAt: wordsAt, wordsEdge: wordsEdge);
+
+        var graph = Filter(FfmpegJobs.For(bump, Gumshoe, 0, bump.LengthMs, 0, clip: Clip)[0]);
+
+        Assert.Contains(drawn, graph, StringComparison.Ordinal);
+        Assert.Contains("fontcolor=0x1A1A1A:fontsize=48:line_spacing=14:text_align=C:x=(w-tw)/2:y=(h-th)/2:", graph, StringComparison.Ordinal); // the lead-in name card is unchanged
     }
 
     [Theory]

@@ -60,7 +60,7 @@ function once(label: string, re: RegExp, text = src): RegExpExecArray {
 // `const` (hence the lookbehind instead of a leading "const "). Since the 2026-11-10 build that `const` opens with the
 // clip's word positions and the looks list has grown ("widen"), so the anchor allows other lists before it and more
 // looks after the first four.
-const start1 = once("bump-clip looks", /const (?:[\w$]+=\[[^\]]*\],)*[\w$]+=\["flash","duotone","zoom","duozoom"[,\]]/);
+const start1 = once("bump-clip looks", /const (?:[\w$]+=\[[^\]]*\],)*([\w$]+)=\["flash","duotone","zoom","duozoom"[,\]]/);
 const timing = once("slide-timing constants", /(?<=const |,)[\w$]+=2500,[\w$]+=1500,[\w$]+=55,([\w$]+)=300,[\w$]+=2e3,([\w$]+)=3500,([\w$]+)=1e3,/);
 const walker = once("schedule walker", /function\*([\w$]+)\(e,t\)\{let n=t;for\(;;\)\{const r=([\w$]+)\(e,n\);yield r,n=r\.endMs\}\}/);
 // Slice 2: archive.org download URL.
@@ -106,6 +106,8 @@ const clips = {
   clipAt: inSlice1("clip time", /function ([\w$]+)\(e,t,n,r=null\)\{[^}]*?playing:!1/)[1],
   holdStep: inSlice1("hold step", /(?:const |,)([\w$]+)=\(e,t\)=>!e\|\|t<e\.first\+e\.motion\?-1:/)[1],
   wordsHidden: inSlice1("words hidden", /(?:const |,)([\w$]+)=\(e,t\)=>[\w$]+\(e,t\)&&!e\.wordsOver/)[1],
+  // The looks the engine accepts, so a test can fail when the site adds one the plugin does not draw.
+  clipLooks: start1[1],
 };
 
 const exportsOf = (o: Record<string, string>) => Object.entries(o).map(([alias, name]) => `${name} as ${alias}`).join(", ");

@@ -8,8 +8,10 @@ namespace Jellyfin.Plugin.Spelunkr.Stream;
 /// <param name="EndMs">When it goes.</param>
 /// <param name="Text">The words.</param>
 /// <param name="Color">The text color ("#RRGGBB") when it isn't the one chosen for the channel color.</param>
-/// <param name="Outline">A 2 px outline color around the words, if any.</param>
-public sealed record BumpCard(long StartMs, long EndMs, string Text, string? Color = null, string? Outline = null);
+/// <param name="Outline">An outline color around the words, if any.</param>
+/// <param name="WordsAt">"centre" or "lower" for a clip's smaller captions; null for the usual words in the middle.</param>
+/// <param name="OutlinePx">The outline's width on a 720-line frame.</param>
+public sealed record BumpCard(long StartMs, long EndMs, string Text, string? Color = null, string? Outline = null, string? WordsAt = null, int OutlinePx = 2);
 
 /// <summary>Lays out bump slides on a timeline.</summary>
 public static class BumpCards
@@ -74,10 +76,13 @@ public static class BumpCards
     }
 
     // Over the clip the site draws the words in the channel color; on a duotone's inverted hold steps they turn black
-    // with a channel-color outline.
+    // with a channel-color outline. A clip with wordsAt makes them white captions instead (they win over the inverted
+    // step's black in the site's CSS, but keep its outline), and wordsEdge "stroke" outlines them in black: a 6 px
+    // centred stroke, so 3 px shows outside the letters.
     private static void ClipSlides(BumpPart channel, BumpClip clip, ChannelLook look, List<BumpCard> cards)
     {
         var inverts = clip.Look is "duotone" or "duozoom";
+        var stroke = clip.WordsEdge == "stroke";
         for (var i = 0; i < channel.Slides.Count && i < clip.Slides.Count; i++)
         {
             var (s, at) = (channel.Slides[i], clip.Slides[i]);
@@ -87,8 +92,10 @@ public static class BumpCards
             }
 
             var card = new BumpCard(at.StartMs, at.EndMs, s.Text);
+            var inverted = inverts && at.HoldStep % 2 == 1;
             cards.Add(i < clip.First ? card
-                : inverts && at.HoldStep % 2 == 1 ? card with { Color = "#000000", Outline = look.Color }
+                : clip.WordsAt is not null ? card with { Color = "#FFFFFF", WordsAt = clip.WordsAt, Outline = stroke ? "#000000" : inverted ? look.Color : null, OutlinePx = stroke ? 3 : 2 }
+                : inverted ? card with { Color = "#000000", Outline = look.Color }
                 : card with { Color = look.Color });
         }
     }

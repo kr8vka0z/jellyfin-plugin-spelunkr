@@ -84,8 +84,10 @@ continuous TV stream.
   nothing for 15 s from its start, or for 45 s once it has written, is killed.
 - **Originals that fail.** This is the one exception to the GPU-then-CPU retry. Metadata can't catch every bad original, so one that fails before it has played goes straight to Spelunkr's file and isn't offered again for 12 hours. One that played and then dropped is only left for the rest of that stretch of the film.
 - **Bump clips.** A bump's channel slide can name an archive.org clip that plays under the words, styled with one of
-  four looks (flash, duotone, zoom, duozoom). The engine's own clip helpers (exported by `tools/extract-engine`) plan
-  it, and `schedule.js` lays the channel slides out the site's way for it (the first slide gets an extra second, where
+  six looks (flash, duotone, zoom, duozoom, widen, wide), with the words optionally as smaller white captions
+  (centre or lower, with or without a black outline). A test fails if the engine's list of looks gains one the plugin
+  doesn't draw, and the daily check flags a look or word position in the data that it doesn't. The engine's own clip
+  helpers (exported by `tools/extract-engine`) plan it, and `schedule.js` lays the channel slides out the site's way for it (the first slide gets an extra second, where
   plain bumps keep a 2 s tail; the channel half lasts the same either way). Only the clock that needs the file's length
   is ported to C# (`BumpClipVideo.ClipTimeS`), pinned by a test to the engine's function. The clip is downloaded and
   ffprobed in the background when the segment before its break starts, and ffmpeg only ever reads the finished local
