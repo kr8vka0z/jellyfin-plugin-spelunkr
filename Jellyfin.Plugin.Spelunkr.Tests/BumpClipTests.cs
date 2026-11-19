@@ -259,24 +259,13 @@ public class BumpClipTests
         var dir = Directory.CreateTempSubdirectory("spelunkr-probe").FullName;
         try
         {
-            string Script(string name, string body)
-            {
-                var path = Path.Combine(dir, name);
-                File.WriteAllText(path, "#!/bin/sh\n" + body + "\n");
-                if (OperatingSystem.IsLinux())
-                {
-                    File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-                }
-                return path;
-            }
-
             // 1 MB on stderr, far past a pipe's buffer, then the length.
-            var chatty = Script("chatty", "head -c 1048576 /dev/zero >&2; echo 12.5");
+            var chatty = Script(dir, "chatty", "head -c 1048576 /dev/zero >&2; echo 12.5");
             using var quick = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             Assert.Equal(12.5, await BumpClips.ProbeAsync(chatty, "x.mp4", quick.Token));
 
             var pidFile = Path.Combine(dir, "pid");
-            var stalled = Script("stalled", $"echo $$ > {pidFile}; exec sleep 30");
+            var stalled = Script(dir, "stalled", $"echo $$ > {pidFile}; exec sleep 30");
             using var soon = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => BumpClips.ProbeAsync(stalled, "x.mp4", soon.Token));
             var pid = int.Parse(File.ReadAllText(pidFile).Trim(), CultureInfo.InvariantCulture);

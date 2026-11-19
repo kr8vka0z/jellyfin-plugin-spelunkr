@@ -50,6 +50,19 @@ internal static class TestKit
     /// <summary>A job's -t, in ms: what a fake runner returns for a job that runs to its end.</summary>
     public static long AskedMs(FfmpegJob job) => (long)Math.Round(double.Parse(Arg(job, "-t"), System.Globalization.CultureInfo.InvariantCulture) * 1000);
 
+    /// <summary>An executable shell script in <paramref name="dir"/>, standing in for ffmpeg or ffprobe. Linux only.</summary>
+    public static string Script(string dir, string name, string body)
+    {
+        var path = System.IO.Path.Combine(dir, name);
+        File.WriteAllText(path, "#!/bin/sh\n" + body + "\n");
+        if (OperatingSystem.IsLinux())
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        }
+
+        return path;
+    }
+
     /// <summary>A logger that keeps each message.</summary>
     public sealed class ListLogger : ILogger
     {
