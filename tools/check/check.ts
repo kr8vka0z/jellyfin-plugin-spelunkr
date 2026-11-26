@@ -7,7 +7,8 @@
 //   extract: the engine can still be cut from the live spelunkr.tv bundle. Different code is only a note, not a
 //            failure: every alarm so far was a rebuild with the schedule unchanged, and "live" decides that
 //   live:    for every channel (or just --channel), a headless browser on spelunkr.tv/<channel> plays the same
-//            archive.org file, at the same moment (within 10 s), as the embedded engine says should be on
+//            archive.org file, at the same moment (within 10 s), as the embedded engine says should be on. A film
+//            archive.org has removed is only a note when it is the engine's pick too (gone.ts)
 // The log gets the whole report; --report gets it with repeated problems counted and cut to fit a GitHub issue.
 import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ import { segmentAt } from "../../Jellyfin.Plugin.Spelunkr/Schedule/schedule.js";
 import { loadVersions, readText, toChannel, type LoadedVersion } from "../oracle/data.ts";
 import { runLive, type Result } from "./live-pool.ts";
 import { fitReport, groupProblems, lineupProblems, offered } from "./rules.ts";
+import { goneFromArchive } from "./gone.ts";
 
 // Engine versions the embedded engine.js was extracted from and verified against.
 const SUPPORTED_ENGINES = [5];
@@ -174,14 +176,25 @@ if (!flag("--skip-live")) {
           // Bumps and cards have no video file, so wait (up to 5 minutes) until the site plays an archive.org video.
           let lastSeen = "nothing";
           let mismatches = 0;
+          let deadChecked = ""; // a failed file is asked about once, not every 5 s
           for (let i = 0; i < 60; i++) {
             await page.waitForTimeout(5000);
             const s = await page.evaluate(() => {
-              const v = [...document.querySelectorAll("video")].find((v) => !v.paused && v.readyState >= 2 && v.currentSrc.includes("archive.org"));
-              return v ? { now: Date.now(), src: v.currentSrc, t: v.currentTime } : null;
+              const vs = [...document.querySelectorAll("video")].filter((v) => v.currentSrc.includes("archive.org"));
+              const v = vs.find((v) => !v.paused && v.readyState >= 2);
+              const dead = vs.find((v) => v.error);
+              return v ? { now: Date.now(), src: v.currentSrc, t: v.currentTime } : dead ? { now: Date.now(), dead: dead.currentSrc } : null;
             });
             if (!s) continue;
             const want = JSON.parse(segmentAt(channel, s.now, lineup.audioBase));
+            if ("dead" in s) {
+              if (s.dead !== deadChecked) {
+                deadChecked = s.dead;
+                if (await goneFromArchive(s.dead, want.url))
+                  return `NOTE: spelunkr.tv can't play ${s.dead} either: archive.org no longer has it. The plugin follows the same schedule, so there is nothing to fix here.`;
+              }
+              continue;
+            }
             const wantS = (want.inMs + want.offsetMs) / 1000;
             lastSeen = `site plays ${s.src} at ${s.t.toFixed(1)} s; engine says ${want.kind} ${want.url ?? want.id} at ${wantS.toFixed(1)} s`;
             if (want.kind !== "show" && want.kind !== "ad") continue; // caught a hand-over to a bump or card; look again
